@@ -1,18 +1,23 @@
 #include <string>
 #include <iostream>
 #include "lexer.h"
+#include "parser.h"
+
 
 int main() {
-    std::string sourceCode = "int x = 42 + 10;";
+    std::string sourceCode = "2 + 3 * 4";
 
     Lexer lexer(sourceCode);
     auto tokens = lexer.tokenize();
 
-    sourceCode.clear();
-    sourceCode.shrink_to_fit();
+    Parser parser(tokens);
+    auto ast = parser.parse();
 
-    for(const auto &token : tokens) {
-        std::cout << "Token [Line " << token.line << ", Col " << token.col << "]: Lexeme='" << token.lexeme << "'\n";
+    if(ast) {
+        std::cout << "  Generated AST   \n";
+        ast->print();
+    } else {
+        std::cout << "Error\n";
     }
     return 0;
 }

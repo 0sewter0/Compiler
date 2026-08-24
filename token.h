@@ -9,7 +9,7 @@ enum class TokenType {
     kwElse,
     kwReturn,
 
-    Identifer,
+    Identifier,
     Number,
 
     Plus,

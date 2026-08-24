@@ -41,7 +41,7 @@ Token Lexer::makeIdentiferOrKeyword() {
         text += advance();
     }
 
-    TokenType type = TokenType::Identifer;
+    TokenType type = TokenType::Identifier;
     if(text == "int") type = TokenType::KwInt;
     else if(text == "return") type = TokenType::kwReturn;
     else if(text == "if") type = TokenType::kwIf;

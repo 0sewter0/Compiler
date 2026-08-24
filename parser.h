@@ -15,8 +15,20 @@ private:
     std::unique_ptr<ExprNode> parsePrimary();
     std::unique_ptr<ExprNode> parseTerm();
     std::unique_ptr<ExprNode> parseExpr();
-    std::unique_ptr<ASTNode> parseVarDecl();
+    std::unique_ptr<VarDecAST> parseVarDecl();
+
+    bool match(TokenType type);
+    Token consume(TokenType type, const std::string& message);
+
+
+    void error(const std::string& message);
+
 public:
-    explicit Parser(const std::vector<Token>& tokens) : tokens(tokens) {}
+    explicit Parser(const std::vector<Token>& tokens);
     std::unique_ptr<ASTNode> parse();
+};
+
+class SyntaxError : public std::runtime_error {
+public:
+    using std::runtime_error::runtime_error;
 };
