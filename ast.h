@@ -12,7 +12,7 @@ class ExprNode : public ASTNode {};
 
 class StmtNode : public ASTNode {}; //Base class for instuctions
 
-class NumberExprAST : ExprNode {
+class NumberExprAST : public ExprNode {
 public:
     int value;
     explicit NumberExprAST(int val) : value(val) {}

@@ -14,6 +14,5 @@ int main() {
     for(const auto &token : tokens) {
         std::cout << "Token [Line " << token.line << ", Col " << token.col << "]: Lexeme='" << token.lexeme << "'\n";
     }
-
     return 0;
 }

@@ -11,6 +11,11 @@ private:
     const Token& peek() const;
     Token advance();
     bool isAtEnd() const;
+
+    std::unique_ptr<ExprNode> parsePrimary();
+    std::unique_ptr<ExprNode> parseTerm();
+    std::unique_ptr<ExprNode> parseExpr();
+    std::unique_ptr<ASTNode> parseVarDecl();
 public:
     explicit Parser(const std::vector<Token>& tokens) : tokens(tokens) {}
     std::unique_ptr<ASTNode> parse();
