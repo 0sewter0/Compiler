@@ -1,6 +1,7 @@
 #pragma once
 #include "ast.h"
 #include "token.h"
+
 #include <vector>
 #include <memory>
 
@@ -15,11 +16,19 @@ private:
     std::unique_ptr<ExprNode> parsePrimary();
     std::unique_ptr<ExprNode> parseTerm();
     std::unique_ptr<ExprNode> parseExpr();
+
     std::unique_ptr<VarDecAST> parseVarDecl();
+
+    std::unique_ptr<IfStmtAST> parseIfStmt();
+    std::unique_ptr<ASTNode> parseBlock();
+    std::unique_ptr<ASTNode> parseStatement();
+
+    Token GetNextTok();
 
     bool match(TokenType type);
     Token consume(TokenType type, const std::string& message);
 
+    std::unique_ptr<ExprNode> parseCallExpr(std::string name);
 
     void error(const std::string& message);
 

@@ -22,6 +22,12 @@ enum class TokenType {
     RParen,
     LBrace,
     RBrace,
+    Comma,
+
+    GT, // Greater than
+    LT, // Lower than
+    GE, // Greater or equal
+    LE, // Lower or equal
 
     Eof,
     Unknown

@@ -80,9 +80,10 @@ std::vector<Token> Lexer::tokenize() {
             case ';': advance(); tokens.push_back({TokenType::Semicolon, ";", line, startCol}); break;
             case '(': advance(); tokens.push_back({TokenType::LParen, "(", line, startCol}); break;
             case ')': advance(); tokens.push_back({TokenType::RParen, ")", line, startCol}); break;
-            case '{': advance(); tokens.push_back({TokenType::LBrace, "{", line, startCol}); break;
+            case '{': advance(); tokens.push_back({TokenType::LBrace, "{", line, startCol}); break; 
             case '}': advance(); tokens.push_back({TokenType::RBrace, "}", line, startCol}); break;
             case '=': advance(); tokens.push_back({TokenType::Assign, "=", line, startCol}); break;
+            case ',': advance(); tokens.push_back({TokenType::Comma, ",", line, startCol}); break;
             default:
                 advance();
                 tokens.push_back({TokenType::Unknown, std::string(1, c), line, startCol});
