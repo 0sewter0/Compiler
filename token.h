@@ -8,6 +8,7 @@ enum class TokenType {
     kwIf,
     kwElse,
     kwReturn,
+    kwWhile,
 
     Identifier,
     Number,

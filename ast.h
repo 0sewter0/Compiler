@@ -17,6 +17,13 @@ extern llvm::IRBuilder<> Builder;
 extern std::unique_ptr<llvm::Module> TheModule;
 extern SymbolTable symbolTable;
 
+struct LoopBlocks {
+    llvm::BasicBlock* CondBB; // For continue
+    llvm::BasicBlock* AfterBB; // For break
+};
+
+extern std::vector<LoopBlocks> LoopStack;
+
 inline llvm::AllocaInst* CreateEntryBlockAlloca(llvm::Function* TheFunction, const std::string& VarName) {
     llvm::IRBuilder<> TmpB(&TheFunction->getEntryBlock(), TheFunction->getEntryBlock().begin());
     return TmpB.CreateAlloca(llvm::Type::getInt32Ty(Context), nullptr, VarName);
@@ -31,6 +38,111 @@ public:
 };
 
 class ExprNode : public ASTNode {};
+
+class BreakAST : public ASTNode {
+public:
+    llvm::Value* codegen() override {
+        if (LoopStack.empty()) {
+            // Compilation error: break is out of loop
+            return nullptr;
+        }
+        
+        llvm::BasicBlock* AfterBB = LoopStack.back().AfterBB;
+        Builder.CreateBr(AfterBB);
+        
+        // LLVM IR does not allow code to be written after a jump instruction(terminator).
+        // Therefore, you need to create a temporary "dead" block so that any subsequent code
+        // does not break generation, or we return the result.
+        llvm::Function *TheFunction = Builder.GetInsertBlock()->getParent();
+
+        llvm::BasicBlock *DeadBB = llvm::BasicBlock::Create(Builder.getContext(), "dead", TheFunction);
+        Builder.SetInsertPoint(DeadBB);
+        
+        return llvm::Constant::getNullValue(llvm::Type::getInt32Ty(Builder.getContext()));
+    }
+
+    void print(int indent = 0) const override {
+        std::string space(indent * 2, ' ');
+        std::cout << space << "Break\n";
+    }
+};
+
+class ContinueAST : public ASTNode {
+public:
+    llvm::Value* codegen() override {
+        if (LoopStack.empty()) {
+            // Compilation error: continue is out of loop
+            return nullptr;
+        }
+        
+        llvm::BasicBlock* CondBB = LoopStack.back().CondBB;
+        
+        Builder.CreateBr(CondBB);
+        
+        llvm::Function *TheFunction = Builder.GetInsertBlock()->getParent();
+
+        llvm::BasicBlock *DeadBB = llvm::BasicBlock::Create(Builder.getContext(), "dead", TheFunction);
+        Builder.SetInsertPoint(DeadBB);
+        
+        return llvm::Constant::getNullValue(llvm::Type::getInt32Ty(Builder.getContext()));
+    }
+
+    void print(int indent = 0) const override {
+        std::string space(indent * 2, ' ');
+        std::cout << space << "Continue\n";
+    }
+};
+
+class WhileLoopAST : public ASTNode {
+private:
+    std::unique_ptr<ASTNode> cond;
+    std::unique_ptr<ASTNode> body;
+public:
+    WhileLoopAST(std::unique_ptr<ASTNode> cond, std::unique_ptr<ASTNode> body) : cond(std::move(cond)), body(std::move(body)) {}
+    llvm::Value* codegen() override {
+        llvm::Function* TheFunction = Builder.GetInsertBlock()->getParent();
+
+        llvm::BasicBlock* CondBB = llvm::BasicBlock::Create(Context, "whilecond", TheFunction);
+        llvm::BasicBlock* BodyBB = llvm::BasicBlock::Create(Context, "whileloop", TheFunction); // Creating 3 basic blocks.
+        llvm::BasicBlock* AfterBB = llvm::BasicBlock::Create(Context, "whileafter", TheFunction);
+
+        Builder.CreateBr(CondBB);
+
+        // Condition block
+        Builder.SetInsertPoint(CondBB);
+        llvm::Value* CondV = cond->codegen();
+        if(!CondV) return nullptr;
+        Builder.CreateCondBr(CondV, BodyBB, AfterBB); // If cond is true jump into Body, else jump into After.
+
+       // Body block
+        TheFunction->insert(TheFunction->end(), BodyBB);
+        Builder.SetInsertPoint(BodyBB);
+
+        LoopStack.push_back({CondBB, AfterBB});
+
+        llvm::Value* BodyV = body->codegen();
+
+        LoopStack.pop_back();
+
+        if(!Builder.GetInsertBlock()->getTerminator()) {
+            Builder.CreateBr(CondBB);
+        }
+
+        // Exit block
+        TheFunction->insert(TheFunction->end(), AfterBB);
+        Builder.SetInsertPoint(AfterBB);
+
+        return llvm::Constant::getNullValue(llvm::Type::getInt32Ty(Context)); // Basicly, loops return zero/void value
+    }
+
+    void print(int indent = 0) const override {
+        std::string space(indent * 2, ' ');
+        std::cout << space << "WhileLoop\n";
+
+        if(cond) cond->print();
+        if(body) body->print();
+    }
+};
 
 class BlockAST : public ASTNode {
 public:

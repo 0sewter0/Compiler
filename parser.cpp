@@ -135,6 +135,11 @@ std::unique_ptr<ASTNode> Parser::parseStatement() {
     if(match(TokenType::LBrace)) {
         return parseBlock();
     }
+
+    if(peek().type == TokenType::kwWhile) {
+        return parseWhileLoop();
+    }
+
     if(peek().type == TokenType::kwIf) {
         return parseIfStmt();
     }
@@ -178,6 +183,19 @@ std::unique_ptr<ASTNode> Parser::parseBlock() {
     return std::make_unique<BlockAST>(std::move(stmts));
 }
 
+std::unique_ptr<ASTNode> Parser::parseWhileLoop() {
+    match(TokenType::kwWhile);
+
+    consume(TokenType::LParen, "Syntax error: Expected '(' after while");
+
+    auto cond = parseExpr();
+
+    consume(TokenType::RParen, "Syntax error: Expected ')' after condition");
+
+    auto body = parseStatement();
+
+    return std::make_unique<WhileLoopAST>(std::move(cond), std::move(body));
+}
 
 std::unique_ptr<ASTNode> Parser::parse() {
     pos = 0;
@@ -185,7 +203,7 @@ std::unique_ptr<ASTNode> Parser::parse() {
 
     try {
         while(!isAtEnd()) {
-            if(tokens[pos].type == TokenType::KwInt || tokens[pos].type == TokenType::kwIf || tokens[pos].type == TokenType::LBrace) {
+            if(tokens[pos].type == TokenType::KwInt || tokens[pos].type == TokenType::kwIf || tokens[pos].type == TokenType::LBrace || tokens[pos].type == TokenType::kwWhile) {
                 statements.push_back(parseStatement());
             }
             else {

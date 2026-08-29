@@ -46,6 +46,7 @@ Token Lexer::makeIdentiferOrKeyword() {
     else if(text == "return") type = TokenType::kwReturn;
     else if(text == "if") type = TokenType::kwIf;
     else if(text == "else") type = TokenType::kwElse;
+    else if(text == "while") type = TokenType::kwWhile;
 
     return Token{type, text, line, Startcol};
 }

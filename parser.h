@@ -23,6 +23,8 @@ private:
     std::unique_ptr<ASTNode> parseBlock();
     std::unique_ptr<ASTNode> parseStatement();
 
+    std::unique_ptr<ASTNode> parseWhileLoop();
+
     Token GetNextTok();
 
     bool match(TokenType type);
