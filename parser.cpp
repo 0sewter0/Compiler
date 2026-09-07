@@ -47,7 +47,7 @@ const Token& Parser::peek() const {
 }
 
 Token Parser::advance() {
-   if(!isAtEnd()) pos++;
+    if(!isAtEnd()) pos++;
     return tokens[pos - 1];
 }
 
@@ -145,7 +145,12 @@ std::unique_ptr<ASTNode> Parser::parseStatement() {
     }
 
     if(peek().type == TokenType::KwInt) {
+        if(tokens[pos+2].type == TokenType::LParen) {
+            return parseDefinition();
+        }
         return parseVarDecl();
+    } else if(peek().type == TokenType::kwReturn) {
+        return parseReturnStmt();
     }
 
     auto expr = parseExpr();
@@ -195,6 +200,53 @@ std::unique_ptr<ASTNode> Parser::parseWhileLoop() {
     auto body = parseStatement();
 
     return std::make_unique<WhileLoopAST>(std::move(cond), std::move(body));
+}
+
+std::unique_ptr<PrototypeAST> Parser::parsePrototype() {
+    std::string FuncName = peek().lexeme;
+    consume(TokenType::Identifier, "Syntax error: Expected function name in prototype");
+
+    consume(TokenType::LParen, "Syntax error: Expected '(' in prototype");
+
+    std::vector<std::string> ArgNames;
+    
+    while(peek().type == TokenType::KwInt) {
+        advance();
+        ArgNames.push_back(peek().lexeme);
+        advance();
+        if(peek().type == TokenType::Comma) {
+            advance();
+        }
+    }
+    consume(TokenType::RParen, "Syntax error: Expected ')' in prototype");
+
+    return std::make_unique<PrototypeAST>(FuncName, std::move(ArgNames));
+}
+
+std::unique_ptr<FunctionAST> Parser::parseDefinition() {
+    advance();
+    auto Prototype = parsePrototype();
+    if(!Prototype) return nullptr;
+
+    if(peek().type == TokenType::LBrace) {
+        auto Body = parseStatement();
+        return std::make_unique<FunctionAST>(std::move(Prototype), std::move(Body));
+    }
+
+    return nullptr;
+}
+
+std::unique_ptr<ASTNode> Parser::parseReturnStmt() {
+    advance();
+
+    std::unique_ptr<ASTNode> Expr = nullptr;
+
+    if(peek().type != TokenType::Semicolon) {
+        Expr = parseExpr();
+    }
+
+    consume(TokenType::Semicolon, "Syntax error: Expected ';' after return value");
+    return std::make_unique<ReturnStmtAST>(std::move(Expr));
 }
 
 std::unique_ptr<ASTNode> Parser::parse() {

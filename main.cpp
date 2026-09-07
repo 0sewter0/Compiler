@@ -11,45 +11,41 @@ llvm::LLVMContext Context;
 llvm::IRBuilder<> Builder(Context);
 std::unique_ptr<llvm::Module> TheModule;
 SymbolTable symbolTable;
+std::vector<LoopBlocks> LoopStack;
 
 int main() {
     TheModule = std::make_unique<llvm::Module>("SRZCompiler", Context);
     initBuiltins(TheModule.get());
 
-    std::string sourceCode = " { int x = 5; }";
+    std::string sourceCode = 
+    "int main() {"
+    "    int a = 20;"
+    "    int b = 40;"
+    "    int c = a * b;"
+    "    return c;"
+    "}";
     Lexer lexer(sourceCode);
     auto tokens = lexer.tokenize();
 
-    for(const auto& tok : tokens) {
-        std::cout << tok.lexeme;
+    for(const auto &tok : tokens) {
+        std::cout << "token: type=" << static_cast<int>(tok.type) << " | Lexeme='" << tok.lexeme << "'\n";
     }
-    std::cout << std::endl;
 
     Parser parser(tokens);
-    auto ast = parser.parse();
 
-    if(!ast) {
-        return 1;
-    }
-
-    //Creating a wrapper-function for main() with the signature int32()
-    llvm::FunctionType* FT = llvm::FunctionType::get(llvm::Type::getInt32Ty(Context), false);
-    llvm::Function* MainFunc = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, "main", TheModule.get());
-
-    llvm::BasicBlock* BB = llvm::BasicBlock::Create(Context, "entry", MainFunc);
-    Builder.SetInsertPoint(BB);
-
-    llvm::Value* RetVal = ast->codegen(); // generating IR from ast
-
-    if(RetVal) {
-        Builder.CreateRet(RetVal);
-    } else {
-        Builder.CreateRet(llvm::ConstantInt::get(Context, llvm::APInt(32, 0)));
+    while(parser.peek().type != TokenType::Eof) {
+        if(auto node = parser.parseDefinition()) {
+            node->codegen();
+        } else {
+            std::cerr << "Parsing error encountered\n";
+            break;
+        }
     }
 
     std::error_code ec;
     llvm::raw_fd_ostream dest("output.ll", ec);
     TheModule->print(dest, nullptr);
 
+    std::cout << "success\n";
     return 0;
 }

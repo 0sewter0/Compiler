@@ -29,12 +29,12 @@ inline llvm::AllocaInst* CreateEntryBlockAlloca(llvm::Function* TheFunction, con
     return TmpB.CreateAlloca(llvm::Type::getInt32Ty(Context), nullptr, VarName);
 }
 
-//Base class for all tree nodes
+//Base class for all nodes
 class ASTNode {
 public:
     virtual ~ASTNode() = default;
     virtual void print(int indent = 0) const = 0; // For printing AST
-    virtual llvm::Value* codegen() = 0;
+    virtual llvm::Value* codegen() = 0; // Generating IR.
 };
 
 class ExprNode : public ASTNode {};
@@ -94,10 +94,10 @@ public:
 };
 
 class WhileLoopAST : public ASTNode {
-private:
+public:
     std::unique_ptr<ASTNode> cond;
     std::unique_ptr<ASTNode> body;
-public:
+    
     WhileLoopAST(std::unique_ptr<ASTNode> cond, std::unique_ptr<ASTNode> body) : cond(std::move(cond)), body(std::move(body)) {}
     llvm::Value* codegen() override {
         llvm::Function* TheFunction = Builder.GetInsertBlock()->getParent();
@@ -162,7 +162,7 @@ public:
         auto LocalVariables = symbolTable.popScope();
 
         for(auto const &[name, allocaInst] : LocalVariables) {
-            if (allocaInst) {
+            if(allocaInst) {
             // Gain type size in bytes
                 llvm::Type* varType = allocaInst->getAllocatedType();
                 uint64_t typeSize = TheModule->getDataLayout().getTypeAllocSize(varType);
@@ -213,7 +213,107 @@ public:
     }
 };
 
-class StmtNode : public ASTNode {}; //Base class for instuctions
+class PrototypeAST : public ASTNode {
+public:
+    std::string Name;
+    std::vector<std::string> Args;
+
+    PrototypeAST(const std::string &Name, std::vector<std::string> Args) : Name(Name), Args(std::move(Args)) {}
+
+    void print(int indent = 0) const override {
+        std::string space(indent*2, ' ');
+        std::cout << space << "FPrototype\n";
+    }
+
+    llvm::Value* codegen() override {
+        std::vector<llvm::Type*> Ints(Args.size(), llvm::Type::getInt32Ty(Context));
+        llvm::FunctionType *FT = llvm::FunctionType::get(llvm::Type::getInt32Ty(Context), Ints, false);
+        llvm::Function *F = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, Name, TheModule.get());
+
+        unsigned Idx = 0;
+        for(auto &Arg : F->args()) Arg.setName(Args[Idx++]);
+        return F;
+    } 
+};
+
+class FunctionAST : public ASTNode {
+public:
+    std::unique_ptr<PrototypeAST> Prototype;
+    std::unique_ptr<ASTNode> Body;
+    FunctionAST(std::unique_ptr<PrototypeAST> Proto, std::unique_ptr<ASTNode> Body) : Prototype(std::move(Proto)), Body(std::move(Body)) {}
+
+    void print(int indent = 0) const override {
+        std::string space(indent*2, ' ');
+        std::cout << space << "Function body: \n";
+        Body->print();
+    }
+
+    llvm::Value* codegen() override {
+        llvm::Function *TheFunction =
+        TheModule->getFunction(Prototype->Name);
+
+        if(!TheFunction) {
+            Prototype->codegen();
+            TheFunction = TheModule->getFunction(Prototype->Name);
+        }
+
+        if(!TheFunction) return nullptr;
+
+        if(!TheFunction->empty()) {
+            std::cerr << "Compilation error: Function cannot be redefined\n";
+            return nullptr;
+        }
+
+        llvm::BasicBlock *BB = llvm::BasicBlock::Create(Context, "entry", TheFunction);
+        Builder.SetInsertPoint(BB);
+
+        symbolTable.pushScope();
+
+        for(auto &Arg : TheFunction->args()) {
+            llvm::IRBuilder<> TmpB(&TheFunction->getEntryBlock(), TheFunction->getEntryBlock().begin());
+            llvm::AllocaInst *Alloca = TmpB.CreateAlloca(llvm::Type::getInt32Ty(Context), nullptr, std::string(Arg.getName()));
+
+            Builder.CreateStore(&Arg, Alloca);
+
+            symbolTable.declareVariable(
+            std::string(Arg.getName()), Alloca);
+        } 
+
+        Body->codegen();
+
+        if(!Builder.GetInsertBlock()->getTerminator()) {
+            Builder.CreateRet(llvm::ConstantInt::get(Context, llvm::APInt(32, 0)));
+        }
+
+        symbolTable.popScope();
+        return TheFunction;
+    }
+};
+
+class ReturnStmtAST : public ASTNode {
+public:
+    std::unique_ptr<ASTNode> Value;
+    ReturnStmtAST(std::unique_ptr<ASTNode> Val) : Value(std::move(Val)) {}
+
+    void print(int indent = 0) const override {
+        std::string space(indent*2, ' ');
+        std::cout << space << "ReturnStmt(Val: " << Value << ")\n";
+    }
+
+    llvm::Value* codegen() override {
+        llvm::Value* RetVal = nullptr;
+        if(Value) {
+            RetVal = Value->codegen();
+            if(!RetVal) return nullptr;
+        } else {
+            RetVal = llvm::ConstantInt::get(Context, llvm::APInt(32, 0));
+        }
+
+        return Builder.CreateRet(RetVal);
+    }
+};
+
+class StmtNode : public ASTNode {};
 
 class IfStmtAST : public ASTNode {
 public:
