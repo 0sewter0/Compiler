@@ -63,6 +63,13 @@ std::unique_ptr<ExprNode> Parser::parsePrimary() {
         if(peek().type == TokenType::LParen) {
             return parseCallExpr(var.lexeme);
         }
+        if(peek().type == TokenType::LBracket) {
+            advance();
+            auto index = parseExpr();
+            consume(TokenType::RBracket, "Syntax error: Expected ']'");
+
+            return std::make_unique<ArrayAccessAST>(var.lexeme, std::move(index));
+        }
         return std::make_unique<VariableExprAST>(var.lexeme);
     } else if(current.type == TokenType::LParen) {
         advance();
@@ -101,10 +108,29 @@ std::unique_ptr<ExprNode> Parser::parseExpr() {
     return left;
 }
 
-std::unique_ptr<VarDecAST> Parser::parseVarDecl() {
+std::unique_ptr<ASTNode> Parser::parseVarDecl() {
     advance();
 
     Token idToken = consume(TokenType::Identifier, "Expected variable name after 'int'");
+
+    if(peek().type == TokenType::LBracket) {
+        advance();
+        int size = 0;
+        
+        if(peek().type == TokenType::Number) {
+            size = std::stoi(peek().lexeme);
+            advance();
+        } else {
+            error("Runtime error: Expected constant array size inside '[' and ']'");
+            return nullptr;
+        }
+        consume(TokenType::RBracket, "Syntax error: Expected ']' after array size");
+
+        consume(TokenType::Semicolon, "Syntax error: Expected ';' after declaration");
+
+        return std::make_unique<ArrayDeclAST>(idToken.lexeme, size);
+    }
+
     consume(TokenType::Assign, "Expected '=' after variable name");
 
     std::unique_ptr<ExprNode> initializer = parseExpr();

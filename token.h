@@ -23,6 +23,8 @@ enum class TokenType {
     RParen,
     LBrace,
     RBrace,
+    LBracket,
+    RBracket,
     Comma,
 
     GT, // Greater than

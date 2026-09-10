@@ -39,6 +39,64 @@ public:
 
 class ExprNode : public ASTNode {};
 
+class ArrayAccessAST : public ExprNode {
+public:
+    std::string name;
+    std::unique_ptr<ASTNode> index;
+
+    ArrayAccessAST(const std::string &Name, std::unique_ptr<ExprNode> Index) : name(Name), index(std::move(Index)) {}
+
+    llvm::Value* codegen() override {
+        llvm::Value* ArrayPtr = symbolTable.lookupVariable(name);
+        if(!ArrayPtr) {
+            std::cerr << "Unknown variable name: " << name << std::endl;
+            return nullptr;
+        }
+
+        llvm::Value* IndexVal = index->codegen();
+        if(!IndexVal) return nullptr;
+
+        llvm::Value* IdxList[] = {Builder.getInt32(0), IndexVal};
+
+        llvm::ArrayType* ArrayTy = llvm::ArrayType::get(Builder.getInt32Ty(), 5);
+
+        llvm::Value* ElementPtr = Builder.CreateGEP(ArrayTy, ArrayPtr, IdxList, "arrayidx");
+
+        return Builder.CreateLoad(Builder.getInt32Ty(), ElementPtr, "tmpld");
+    }
+    void print(int indent = 0) const override {
+        std::string space(indent*2, ' ');
+        std::cout << space << "ArrayAccess(name: " << name << ", index: " << index << ")\n";
+    }
+};
+
+class ArrayDeclAST : public ASTNode {
+public:
+    std::string name;
+    int size;
+
+    ArrayDeclAST(std::string Name, int Size) : name(Name), size(Size) {}
+
+    llvm::Value* codegen() override {
+        llvm::ArrayType* ArrayTy = llvm::ArrayType::get(Builder.getInt32Ty(), size);
+
+        llvm::AllocaInst* Alloca = Builder.CreateAlloca(ArrayTy, nullptr, name);
+
+        uint64_t typeSize = TheModule->getDataLayout().getTypeAllocSize(ArrayTy);
+        llvm::ConstantInt* sizeVal = Builder.getInt64(typeSize);
+
+        Builder.CreateLifetimeStart(Alloca, sizeVal);
+
+        symbolTable.declareVariable(name, Alloca);
+
+        return Alloca;
+    }
+    void print(int indent = 0) const override {
+        std::string space(indent*2, ' ');
+        std::cout << space << "Array Declaration(name: " << name << ", size: " << size << ")\n";
+    }
+};
+
 class BreakAST : public ASTNode {
 public:
     llvm::Value* codegen() override {
@@ -164,9 +222,14 @@ public:
         for(auto const &[name, allocaInst] : LocalVariables) {
             if(allocaInst) {
             // Gain type size in bytes
+
+                if(Builder.GetInsertBlock() && Builder.GetInsertBlock()->getTerminator()) {
+                    break;
+                }
                 llvm::Type* varType = allocaInst->getAllocatedType();
                 uint64_t typeSize = TheModule->getDataLayout().getTypeAllocSize(varType);
                 llvm::ConstantInt* sizeVal = Builder.getInt64(typeSize);
+
 
                 Builder.CreateLifetimeEnd(allocaInst, sizeVal);
             }
@@ -281,10 +344,10 @@ public:
 
         Body->codegen();
 
-        if(!Builder.GetInsertBlock()->getTerminator()) {
-            Builder.CreateRet(llvm::ConstantInt::get(Context, llvm::APInt(32, 0)));
-        }
-
+        /*llvm::BasicBlock* curBB = Builder.GetInsertBlock();
+        if(curBB && !curBB->getTerminator()) {
+            Builder.CreateRet(Builder.getInt32(0));
+        } */
         symbolTable.popScope();
         return TheFunction;
     }
@@ -301,14 +364,7 @@ public:
     }
 
     llvm::Value* codegen() override {
-        llvm::Value* RetVal = nullptr;
-        if(Value) {
-            RetVal = Value->codegen();
-            if(!RetVal) return nullptr;
-        } else {
-            RetVal = llvm::ConstantInt::get(Context, llvm::APInt(32, 0));
-        }
-
+        llvm::Value* RetVal = Value ? Value->codegen() : Builder.getInt32(0);
         return Builder.CreateRet(RetVal);
     }
 };
@@ -444,7 +500,7 @@ public:
     }
 };
 
-class VarDecAST : public StmtNode { // For varibale declaration
+class VarDecAST : public ASTNode { // For varibale declaration
 public:
     std::string name;
     std::unique_ptr<ExprNode> initializer;

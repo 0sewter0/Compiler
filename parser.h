@@ -26,7 +26,7 @@ public:
     std::unique_ptr<ExprNode> parseTerm();
     std::unique_ptr<ExprNode> parseExpr();
 
-    std::unique_ptr<VarDecAST> parseVarDecl();
+    std::unique_ptr<ASTNode> parseVarDecl();
 
     std::unique_ptr<IfStmtAST> parseIfStmt();
     std::unique_ptr<ASTNode> parseBlock();
