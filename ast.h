@@ -47,8 +47,8 @@ public:
     ArrayAccessAST(const std::string &Name, std::unique_ptr<ExprNode> Index) : name(Name), index(std::move(Index)) {}
 
     llvm::Value* codegen() override {
-        llvm::Value* ArrayPtr = symbolTable.lookupVariable(name);
-        if(!ArrayPtr) {
+        llvm::AllocaInst* Alloca = symbolTable.lookupVariable(name);
+        if(!Alloca) {
             std::cerr << "Unknown variable name: " << name << std::endl;
             return nullptr;
         }
@@ -58,13 +58,13 @@ public:
 
         llvm::Value* IdxList[] = {Builder.getInt32(0), IndexVal};
 
-        llvm::ArrayType* ArrayTy = llvm::ArrayType::get(Builder.getInt32Ty(), 5);
+        llvm::Type* ArrayTy = Alloca->getAllocatedType();
 
-        llvm::Value* ElementPtr = Builder.CreateGEP(ArrayTy, ArrayPtr, IdxList, "arrayidx");
+        llvm::Value* ElementPtr = Builder.CreateGEP(ArrayTy, Alloca, IdxList, "arrayidx");
 
         return Builder.CreateLoad(Builder.getInt32Ty(), ElementPtr, "tmpld");
     }
-    
+
     void print(int indent = 0) const override {
         std::string space(indent*2, ' ');
         std::cout << space << "ArrayAccess(name: " << name << ", index: " << index << ")\n";
@@ -104,19 +104,20 @@ public:
     std::string name;
     std::unique_ptr<ExprNode> value;
 
+
     ArrayAssignAST(std::unique_ptr<ExprNode> Index, std::unique_ptr<ExprNode> Value, std::string &Name) : index(std::move(Index)), value(std::move(Value)), name(Name) {}
     
     llvm::Value* codegen() {
-        llvm::Value* arrayPtr = symbolTable.lookupVariable(name);
-        if(!arrayPtr) return nullptr;
+        llvm::AllocaInst* Alloca = symbolTable.lookupVariable(name);
+        if(!Alloca) return nullptr;
 
         llvm::Value* idxVal = index->codegen();
         llvm::Value* valToStore = value->codegen();
 
         llvm::Value* idxList[] = {Builder.getInt32(0), idxVal};
-        llvm::ArrayType* arrayTy = llvm::ArrayType::get(Builder.getInt32Ty(), 5);
+        llvm::Type* arrayTy = Alloca->getAllocatedType();
 
-        llvm::Value* elemPtr = Builder.CreateGEP(arrayTy, arrayPtr, idxList, "arrayidx");
+        llvm::Value* elemPtr = Builder.CreateGEP(arrayTy, Alloca, idxList, "arrayidx");
 
         return Builder.CreateStore(valToStore, elemPtr);
     }

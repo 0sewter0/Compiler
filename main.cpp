@@ -19,9 +19,9 @@ int main() {
 
     std::string sourceCode = 
     "int main() {"
-    "    int arr[5];"
-    "    arr[0] = 42;"
-    "    return arr[0];"
+    "    int arr[18];"
+    "    arr[17] = 412;"
+    "    return arr[17];"
     "}";
     Lexer lexer(sourceCode);
     auto tokens = lexer.tokenize();
