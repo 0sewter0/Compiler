@@ -64,6 +64,7 @@ public:
 
         return Builder.CreateLoad(Builder.getInt32Ty(), ElementPtr, "tmpld");
     }
+    
     void print(int indent = 0) const override {
         std::string space(indent*2, ' ');
         std::cout << space << "ArrayAccess(name: " << name << ", index: " << index << ")\n";
@@ -94,6 +95,35 @@ public:
     void print(int indent = 0) const override {
         std::string space(indent*2, ' ');
         std::cout << space << "Array Declaration(name: " << name << ", size: " << size << ")\n";
+    }
+};
+
+class ArrayAssignAST : public ExprNode {
+public:
+    std::unique_ptr<ExprNode> index;
+    std::string name;
+    std::unique_ptr<ExprNode> value;
+
+    ArrayAssignAST(std::unique_ptr<ExprNode> Index, std::unique_ptr<ExprNode> Value, std::string &Name) : index(std::move(Index)), value(std::move(Value)), name(Name) {}
+    
+    llvm::Value* codegen() {
+        llvm::Value* arrayPtr = symbolTable.lookupVariable(name);
+        if(!arrayPtr) return nullptr;
+
+        llvm::Value* idxVal = index->codegen();
+        llvm::Value* valToStore = value->codegen();
+
+        llvm::Value* idxList[] = {Builder.getInt32(0), idxVal};
+        llvm::ArrayType* arrayTy = llvm::ArrayType::get(Builder.getInt32Ty(), 5);
+
+        llvm::Value* elemPtr = Builder.CreateGEP(arrayTy, arrayPtr, idxList, "arrayidx");
+
+        return Builder.CreateStore(valToStore, elemPtr);
+    }
+
+    void print(int indent = 0) const override {
+        std::string space(indent*2, ' ');
+        std::cout << space << "WriteintoArray(name: " << name << ", index: " << index << ", val: " << value << ")\n"; 
     }
 };
 

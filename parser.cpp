@@ -68,6 +68,12 @@ std::unique_ptr<ExprNode> Parser::parsePrimary() {
             auto index = parseExpr();
             consume(TokenType::RBracket, "Syntax error: Expected ']'");
 
+            if(peek().type == TokenType::Assign) {
+                advance();
+                auto Val = parseExpr();
+                return std::make_unique<ArrayAssignAST>(std::move(index), std::move(Val), var.lexeme);
+            }
+
             return std::make_unique<ArrayAccessAST>(var.lexeme, std::move(index));
         }
         return std::make_unique<VariableExprAST>(var.lexeme);

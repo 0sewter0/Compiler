@@ -20,7 +20,8 @@ int main() {
     std::string sourceCode = 
     "int main() {"
     "    int arr[5];"
-    "    return 0;"
+    "    arr[0] = 42;"
+    "    return arr[0];"
     "}";
     Lexer lexer(sourceCode);
     auto tokens = lexer.tokenize();
