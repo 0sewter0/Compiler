@@ -43,10 +43,12 @@ Token Lexer::makeIdentiferOrKeyword() {
 
     TokenType type = TokenType::Identifier;
     if(text == "int") type = TokenType::KwInt;
+    else if(text == "float") type = TokenType::kwFloat;
     else if(text == "return") type = TokenType::kwReturn;
     else if(text == "if") type = TokenType::kwIf;
     else if(text == "else") type = TokenType::kwElse;
     else if(text == "while") type = TokenType::kwWhile;
+    else if(text == "struct") type = TokenType::kwStruct;
 
     return Token{type, text, line, Startcol};
 }
@@ -87,6 +89,7 @@ std::vector<Token> Lexer::tokenize() {
             case ',': advance(); tokens.push_back({TokenType::Comma, ",", line, startCol}); break;
             case '[': advance(); tokens.push_back({TokenType::LBracket, "[", line, startCol}); break;
             case ']': advance(); tokens.push_back({TokenType::RBracket, "]", line, startCol}); break;
+            case '.': advance(); tokens.push_back({TokenType::Point, ".", line, startCol}); break;
             default:
                 advance();
                 tokens.push_back({TokenType::Unknown, std::string(1, c), line, startCol});

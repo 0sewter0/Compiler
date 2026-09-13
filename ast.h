@@ -22,11 +22,25 @@ struct LoopBlocks {
     llvm::BasicBlock* AfterBB; // For break
 };
 
+struct FieldDef {
+    std::string typeName;
+    std::string fieldName;
+};
+
+inline llvm::Type* getTypeByName(const std::string& name) {
+    if(name == "int") return Builder.getInt32Ty();
+    if(name == "float") return Builder.getFloatTy();
+    if(auto* sInfo = symbolTable.getStructInfo(name)) {
+        return sInfo->type;
+    }
+    throw std::runtime_error("Unknown type: " + name);
+}
+
 extern std::vector<LoopBlocks> LoopStack;
 
-inline llvm::AllocaInst* CreateEntryBlockAlloca(llvm::Function* TheFunction, const std::string& VarName) {
+inline llvm::AllocaInst* CreateEntryBlockAlloca(llvm::Function* TheFunction, const std::string& VarName, llvm::Type* VarTy) {
     llvm::IRBuilder<> TmpB(&TheFunction->getEntryBlock(), TheFunction->getEntryBlock().begin());
-    return TmpB.CreateAlloca(llvm::Type::getInt32Ty(Context), nullptr, VarName);
+    return TmpB.CreateAlloca(VarTy, nullptr, VarName);
 }
 
 //Base class for all nodes
@@ -39,15 +53,145 @@ public:
 
 class ExprNode : public ASTNode {};
 
-class ArrayAccessAST : public ExprNode {
+class VariableExprAST : public ExprNode { 
 public:
     std::string name;
-    std::unique_ptr<ASTNode> index;
 
-    ArrayAccessAST(const std::string &Name, std::unique_ptr<ExprNode> Index) : name(Name), index(std::move(Index)) {}
+    explicit VariableExprAST(std::string name) : name(std::move(name)) {}
+
+    void print(int indent = 0) const override {
+        std::string space(indent * 2, ' ');
+        std::cout << space << "Variable(" << name << ")\n";
+    }
 
     llvm::Value* codegen() override {
-        llvm::AllocaInst* Alloca = symbolTable.lookupVariable(name);
+        llvm::AllocaInst* A = symbolTable.lookupVariable(name).Alloca;
+        if(!A) {
+            std::cerr << "Unknown Variable name: " << name << std::endl;
+            return nullptr;
+        }
+        return Builder.CreateLoad(A->getAllocatedType(), A, name.c_str());
+    }
+};
+
+class StructDeclAST : public ASTNode {
+public:
+    std::string structName;
+    std::vector<FieldDef> fields;
+
+    StructDeclAST(std::string Name, std::vector<FieldDef> Fields) : structName(std::move(Name)), fields(std::move(Fields)) {}
+
+    llvm::Value* codegen() override {
+        std::vector<llvm::Type*> bodyTypes;
+        StructTypeInfo info;
+
+        unsigned index = 0;
+        for(const auto &field : fields) {
+            llvm::Type* fType = getTypeByName(field.typeName);
+            bodyTypes.push_back(fType);
+
+            info.fields[field.fieldName] = {index++, fType};
+        }
+
+        info.type = llvm::StructType::create(Context, bodyTypes, "struct." + structName);
+
+        symbolTable.registerStruct(structName, info);
+
+        return nullptr; // Type Declaration do NOT generates runtime-code
+    }
+
+    void print(int indent = 0) const override {
+        std::string space(indent*2, ' ');
+        std::cout << space << "Struct Declarartion(name: " << structName;
+    }
+};
+
+class StructAccessAST : public ExprNode {
+public:
+    std::unique_ptr<ExprNode> base;
+    std::string fieldName;
+
+    StructAccessAST(std::unique_ptr<ExprNode> Base, std::string FieldName) : base(std::move(Base)), fieldName(std::move(FieldName)) {}
+    
+    llvm::Value* codegen() override {
+        std::string varName;
+        if(VariableExprAST* varExpr = dynamic_cast<VariableExprAST*>(base.get())) {
+            varName = varExpr->name;
+        } else {
+            throw std::runtime_error("Nested struct access codegen is under construction");
+        }
+
+        auto symbInfo = symbolTable.lookupVariable(varName);
+        auto structInfo = symbolTable.getStructInfo(symbInfo.typeName);
+        if(!symbInfo.Alloca || !structInfo) {
+            throw std::runtime_error("Unknown struct variable: " + varName);
+        }
+
+        auto fieldIt = structInfo->fields.find(fieldName);
+        if(fieldIt == structInfo->fields.end()) {
+            throw std::runtime_error("Struct " + symbInfo.typeName + " has no field named " + fieldName);
+        }
+
+        unsigned fieldIdx = fieldIt->second.first;
+        llvm::Type* fieldType = fieldIt->second.second;
+        
+        llvm::Value* fieldPtr = Builder.CreateGEP(structInfo->type, symbInfo.Alloca, {Builder.getInt32(0), Builder.getInt32(fieldIdx)}, varName + "." + fieldName + "ptr");
+
+        return Builder.CreateLoad(fieldType, fieldPtr, fieldName + "val");
+    }
+
+    void print(int indent = 0) const override {
+        std::string space(indent*2, ' ');
+        std::cout << "StructAccess( " << "fieldName: " << fieldName << ")\n";
+    }
+};
+
+class StructAssignAST : public ExprNode {
+public:
+    std::string varName;
+    std::string fieldName;
+    std::unique_ptr<ExprNode> value;
+
+    StructAssignAST(std::string VarName, std::string FieldName, std::unique_ptr<ExprNode> Value) : varName(std::move(VarName)), fieldName(std::move(FieldName)), value(std::move(Value)) {}
+
+    llvm::Value* codegen() override {
+        auto symbInfo = symbolTable.lookupVariable(varName);
+        auto structInfo = symbolTable.getStructInfo(symbInfo.typeName);
+
+        unsigned fieldIdx = structInfo->fields.at(fieldName).first;
+        llvm::Value* valToStore = value->codegen();
+
+        llvm::Value* idxList[] = {Builder.getInt32(0), Builder.getInt32(fieldIdx)};
+
+        llvm::Value* fieldPtr = Builder.CreateGEP(structInfo->type, symbInfo.Alloca, idxList, varName + "." + fieldName + ".ptr");
+
+        return Builder.CreateStore(valToStore, fieldPtr);
+    }
+
+    void print(int indent = 0) const override {
+        std::string space(indent*2, ' ');
+        std::cout << space << "WriteIntoField(varName: " << varName << ", fieldName: " << fieldName << ", val: " << value << ")\n";
+    } 
+};
+
+/*-------------------------------------------*/
+
+class ArrayAccessAST : public ExprNode {
+public:
+    std::unique_ptr<ExprNode> base;
+    std::unique_ptr<ASTNode> index;
+
+    ArrayAccessAST(std::unique_ptr<ExprNode> Base, std::unique_ptr<ExprNode> Index) : base(std::move(Base)), index(std::move(Index)) {}
+
+    llvm::Value* codegen() override {
+        std::string name;
+        if(auto* varExpr = dynamic_cast<VariableExprAST*>(base.get())) {
+            name = varExpr->name;
+        } else {
+
+        }
+
+        llvm::AllocaInst* Alloca = symbolTable.lookupVariable(name).Alloca;
         if(!Alloca) {
             std::cerr << "Unknown variable name: " << name << std::endl;
             return nullptr;
@@ -67,7 +211,7 @@ public:
 
     void print(int indent = 0) const override {
         std::string space(indent*2, ' ');
-        std::cout << space << "ArrayAccess(name: " << name << ", index: " << index << ")\n";
+        std::cout << space << "ArrayAccess(index: " << index << ")\n";
     }
 };
 
@@ -88,7 +232,7 @@ public:
 
         Builder.CreateLifetimeStart(Alloca, sizeVal);
 
-        symbolTable.declareVariable(name, Alloca);
+        symbolTable.declareVariable(name, Alloca, "array");
 
         return Alloca;
     }
@@ -108,7 +252,7 @@ public:
     ArrayAssignAST(std::unique_ptr<ExprNode> Index, std::unique_ptr<ExprNode> Value, std::string &Name) : index(std::move(Index)), value(std::move(Value)), name(Name) {}
     
     llvm::Value* codegen() {
-        llvm::AllocaInst* Alloca = symbolTable.lookupVariable(name);
+        llvm::AllocaInst* Alloca = symbolTable.lookupVariable(name).Alloca;
         if(!Alloca) return nullptr;
 
         llvm::Value* idxVal = index->codegen();
@@ -127,6 +271,8 @@ public:
         std::cout << space << "WriteintoArray(name: " << name << ", index: " << index << ", val: " << value << ")\n"; 
     }
 };
+
+/*---------------------------------------------------------------------------------------------------------------------*/
 
 class BreakAST : public ASTNode {
 public:
@@ -200,7 +346,10 @@ public:
         // Condition block
         Builder.SetInsertPoint(CondBB);
         llvm::Value* CondV = cond->codegen();
-        if(!CondV) return nullptr;
+        if(CondV->getType()->isIntegerTy() && CondV->getType()->getIntegerBitWidth() != 1) {
+            CondV = Builder.CreateICmpNE(CondV, Builder.getInt32(0), "loopcond");
+        }
+
         Builder.CreateCondBr(CondV, BodyBB, AfterBB); // If cond is true jump into Body, else jump into After.
 
        // Body block
@@ -233,6 +382,8 @@ public:
     }
 };
 
+/*---------------------------------------------------------------------------------------------------------*/
+
 class BlockAST : public ASTNode {
 public:
     std::vector<std::unique_ptr<ASTNode>> Statements;
@@ -250,19 +401,19 @@ public:
 
         auto LocalVariables = symbolTable.popScope();
 
-        for(auto const &[name, allocaInst] : LocalVariables) {
-            if(allocaInst) {
+        for(auto const &[name, symbolInfo] : LocalVariables) {
+            if(symbolInfo.Alloca) {
             // Gain type size in bytes
 
                 if(Builder.GetInsertBlock() && Builder.GetInsertBlock()->getTerminator()) {
                     break;
                 }
-                llvm::Type* varType = allocaInst->getAllocatedType();
+                llvm::Type* varType = symbolInfo.Alloca->getAllocatedType();
                 uint64_t typeSize = TheModule->getDataLayout().getTypeAllocSize(varType);
                 llvm::ConstantInt* sizeVal = Builder.getInt64(typeSize);
 
 
-                Builder.CreateLifetimeEnd(allocaInst, sizeVal);
+                Builder.CreateLifetimeEnd(symbolInfo.Alloca, sizeVal);
             }
         }
 
@@ -279,6 +430,8 @@ public:
         std::cout << space << "}\n";
     }
 };
+
+/*----------------------------------------------------------*/
 
 class CallExprAST : public ExprNode {
 public:
@@ -370,7 +523,7 @@ public:
             Builder.CreateStore(&Arg, Alloca);
 
             symbolTable.declareVariable(
-            std::string(Arg.getName()), Alloca);
+            std::string(Arg.getName()), Alloca, "int");
         } 
 
         Body->codegen();
@@ -400,6 +553,8 @@ public:
     }
 };
 
+/*-----------------------------------------------------------------------------------------------------------*/
+
 class StmtNode : public ASTNode {};
 
 class IfStmtAST : public ASTNode {
@@ -418,9 +573,10 @@ public:
     }
     llvm::Value* codegen() override {
         llvm::Value* CondV = Condition->codegen();
-        if(!CondV) return nullptr;
 
-        CondV = Builder.CreateICmpNE(CondV, llvm::ConstantInt::get(Context, llvm::APInt(32, 0)), "ifcond");
+        if(CondV->getType()->isIntegerTy() && CondV->getType()->getIntegerBitWidth() != 1) {
+            CondV = Builder.CreateICmpNE(CondV, Builder.getInt32(0), "ifcond");
+        }
 
         llvm::Function* TheFunction = Builder.GetInsertBlock()->getParent();
 
@@ -473,13 +629,27 @@ public:
     }
 };
 
+class FloatExprAST : public ExprNode {
+    float val;
+public:
+    FloatExprAST(float Val) : val(Val) {}
+    llvm::Value* codegen() override {
+        return llvm::ConstantFP::get(Context, llvm::APFloat(val));
+    }
+
+    void print(int indent = 0) const override {
+        std::string space(indent*2, ' ');
+        std::cout << "Float Expression, value: " << val;
+    }
+};
+
 class BinaryExprAST : public ExprNode {
 public:
-    char op;
+    std::string op;
     std::unique_ptr<ExprNode> left;
     std::unique_ptr<ExprNode> right;
 
-    BinaryExprAST(char op, std::unique_ptr<ExprNode> left, std::unique_ptr<ExprNode> right) : op(op), left(std::move(left)), right(std::move(right)) {}
+    BinaryExprAST(std::string Op, std::unique_ptr<ExprNode> left, std::unique_ptr<ExprNode> right) : op(Op), left(std::move(left)), right(std::move(right)) {}
     
     void print(int indent = 0) const override {
         std::string space(indent * 2, ' ');
@@ -489,54 +659,114 @@ public:
     }
     
     llvm::Value* codegen() override {
+        if(op == "=") {
+            llvm::Value* value = right->codegen();
+            if(!value) return nullptr;
+
+            if(auto* variable = dynamic_cast<VariableExprAST*>(left.get())) {
+                auto symbolInfo = symbolTable.lookupVariable(variable->name);
+                if(!symbolInfo.Alloca) {
+                    throw std::runtime_error("Unknown variable: " + variable->name);
+                }
+                Builder.CreateStore(value, symbolInfo.Alloca);
+                return value;
+            }
+
+            if(auto* access = dynamic_cast<StructAccessAST*>(left.get())) {
+                auto* base = dynamic_cast<VariableExprAST*>(access->base.get());
+                if(!base) {
+                    throw std::runtime_error("Nested struct assignment is under construction");
+                }
+
+                auto symbolInfo = symbolTable.lookupVariable(base->name);
+                auto* structInfo = symbolTable.getStructInfo(symbolInfo.typeName);
+                if(!symbolInfo.Alloca || !structInfo) {
+                    throw std::runtime_error("Unknown struct variable: " + base->name);
+                }
+
+                auto fieldIt = structInfo->fields.find(access->fieldName);
+                if(fieldIt == structInfo->fields.end()) {
+                    throw std::runtime_error("Unknown struct field: " + access->fieldName);
+                }
+
+                auto fieldPtr = Builder.CreateGEP(
+                    structInfo->type,
+                    symbolInfo.Alloca,
+                    {Builder.getInt32(0), Builder.getInt32(fieldIt->second.first)},
+                    base->name + "." + access->fieldName + ".ptr");
+                Builder.CreateStore(value, fieldPtr);
+                return value;
+            }
+
+            throw std::runtime_error("Invalid assignment target");
+        }
+
         llvm::Value* L = left->codegen();
         llvm::Value* R = right->codegen();
         if(!L || !R) {
             return nullptr;
         }
 
-        switch (op) {
-            case '+': return Builder.CreateAdd(L, R, "addtmp"); break;
-            case '-': return Builder.CreateSub(L, R, "subtmp"); break; 
-            case '*': return Builder.CreateMul(L, R, "multmp"); break;
-            case '/': return Builder.CreateSDiv(L, R, "divtmp"); break;
-            case '>': return Builder.CreateICmpSGT(L, R, "cmptmp"); break;
-            case '<': return Builder.CreateICmpSLT(L, R, "cmptmp"); break;
-            case '&': return Builder.CreateAnd(L, R, "andtmp"); break;
-            default:
-                std::cerr << "Unknown binary operation" << op << std::endl;
-                return nullptr;
+        bool isFloat = L->getType()->isFloatingPointTy() || R->getType()->isFloatingPointTy();
+
+        if(op == "<") {
+            return isFloat ? Builder.CreateFCmpOLT(L, R, "cmptmp") : Builder.CreateICmpSLT(L, R, "cmptmp");
         }
+        if(op == ">") {
+            return isFloat ? Builder.CreateFCmpOGT(L, R, "cmptmp") : Builder.CreateICmpSGT(L, R, "cmptmp");
+        }
+        if(op == "==") {
+            return isFloat ? Builder.CreateFCmpOEQ(L, R, "cmptmp") : Builder.CreateICmpEQ(L, R, "cmptmp");
+        }
+        if(op == "!=") {
+            return isFloat ? Builder.CreateFCmpONE(L, R, "cmptmp") : Builder.CreateICmpNE(L, R, "cmptmp");
+        }
+        if(op == "<=") {
+            return isFloat ? Builder.CreateFCmpOLE(L, R, "cmptmp") : Builder.CreateICmpSLE(L, R, "cmptmp");
+        }
+        if(op == ">=") {
+            return isFloat ? Builder.CreateFCmpOGE(L, R, "cmptmp") : Builder.CreateICmpSGE(L, R, "cmptmp");
+        }
+        if(op == "+") return isFloat ? Builder.CreateFAdd(L, R, "addtmp") : Builder.CreateAdd(L, R, "addtmp");
+        if(op == "-") return isFloat ? Builder.CreateFSub(L, R, "subtmp") : Builder.CreateSub(L, R, "subtmp");
+        if(op == "*") return isFloat ? Builder.CreateFMul(L, R, "multmp") : Builder.CreateMul(L, R, "multmp");
+        if(op == "/") return isFloat ? Builder.CreateFDiv(L, R, "divtmp") : Builder.CreateSDiv(L, R, "divtmp");
+
+        throw std::runtime_error("Unknown binary operator: " + op);
     }
+
 };
 
-class VariableExprAST : public ExprNode { // For expressions where a variable is used
+class UnaryMinusExprAST : public ExprNode {
 public:
-    std::string name;
-
-    explicit VariableExprAST(std::string name) : name(std::move(name)) {}
-
-    void print(int indent = 0) const override {
-        std::string space(indent * 2, ' ');
-        std::cout << space << "Variable(" << name << ")\n";
-    }
+    char op;
+    std::unique_ptr<ExprNode> operand;
+    UnaryMinusExprAST(char Op, std::unique_ptr<ExprNode> Operand) : op(Op), operand(std::move(Operand)) {}
 
     llvm::Value* codegen() override {
-        llvm::AllocaInst* A = symbolTable.lookupVariable(name);
-        if(!A) {
-            std::cerr << "Unknown Variable name: " << name << std::endl;
-            return nullptr;
+        llvm::Value* operandVal = operand->codegen();
+        if(!operandVal) return nullptr;
+
+        switch (op) {
+            case '-': return Builder.CreateNeg(operandVal, "negtmp");
+            default:
+                throw std::runtime_error("Unknown unary operator: " + op);
         }
-        return Builder.CreateLoad(A->getAllocatedType(), A, name.c_str());
+    };
+
+    void print(int indent = 0) const override {
+        std::string space(indent*2, ' ');
+        std::cout << space << "Unary Expression(op: " << op << ", operand: " << operand;
     }
 };
 
 class VarDecAST : public ASTNode { // For varibale declaration
 public:
     std::string name;
+    std::string typeName;
     std::unique_ptr<ExprNode> initializer;
 
-    VarDecAST(std::string name, std::unique_ptr<ExprNode> init) : name(std::move(name)), initializer(std::move(init)) {}
+    VarDecAST(std::string name, std::unique_ptr<ExprNode> init, std::string TypeName) : name(std::move(name)), initializer(std::move(init)), typeName(std::move(TypeName)) {}
 
     void print(int indent = 0) const override {
         std::string space(indent * 2, ' ');
@@ -545,21 +775,29 @@ public:
     }
 
     llvm::Value* codegen() override {
-        llvm::Value* InitVal = initializer->codegen();
-        if(!InitVal) return nullptr;
-
         llvm::Function* TheFunction = Builder.GetInsertBlock()->getParent();
-        llvm::AllocaInst* Alloca = CreateEntryBlockAlloca(TheFunction, name);
+        llvm::Type* VarTy = getTypeByName(typeName);
         
-        Builder.CreateStore(InitVal, Alloca);
+        if(!VarTy) {
+            std::cerr << "Error: Unknown type " << typeName << std::endl;
+            return nullptr;
+        }
 
-        uint64_t typeSize = TheModule->getDataLayout().getTypeAllocSize(Builder.getInt32Ty());
+        llvm::AllocaInst* Alloca = CreateEntryBlockAlloca(TheFunction, name, VarTy);
+
+        if(initializer) {
+            llvm::Value* initVal = initializer->codegen();
+            if(!initVal) return nullptr;
+            Builder.CreateStore(initVal, Alloca);
+        }
+
+        uint64_t typeSize = TheModule->getDataLayout().getTypeAllocSize(VarTy);
         llvm::ConstantInt* sizeVal = Builder.getInt64(typeSize);
         Builder.CreateLifetimeStart(Alloca, sizeVal);
-        symbolTable.declareVariable(name, Alloca);
 
+        symbolTable.declareVariable(name, Alloca, typeName);
 
-        return InitVal;
+        return Alloca;
     }
 };
 

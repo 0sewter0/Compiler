@@ -4,6 +4,26 @@
 
 #include <vector>
 #include <memory>
+#include <cstddef>
+#include <stdexcept>
+#include <string>
+
+class ParseTracer {
+    static inline int depth = 0;
+    std::string funcname;
+public:
+    ParseTracer(const std::string& name) : funcname(name) {
+        std::cout << std::string(depth*2, ' ') << "-> " << funcname << std::endl;
+        depth++;
+    }
+
+    ~ParseTracer() {
+        depth--;
+        std::cout << std::string(depth*2, ' ') << "<- " << funcname << std::endl;
+    }
+};
+
+#define TRACE_PARSER ParseTracer _tracer(__FUNCTION__)
 
 class Parser {
 private:
@@ -20,11 +40,10 @@ private:
 public:
     explicit Parser(const std::vector<Token>& tokens);
     std::unique_ptr<ASTNode> parse();
+    std::unique_ptr<ASTNode> parseTopLevel();
 
-    
+    std::unique_ptr<ExprNode> parseExpr(int precedence = PREC_NONE);
     std::unique_ptr<ExprNode> parsePrimary();
-    std::unique_ptr<ExprNode> parseTerm();
-    std::unique_ptr<ExprNode> parseExpr();
 
     std::unique_ptr<ASTNode> parseVarDecl();
 
@@ -39,8 +58,11 @@ public:
     std::unique_ptr<ExprNode> parseCallExpr(std::string name);
     std::unique_ptr<ASTNode> parseReturnStmt();
 
+    std::unique_ptr<ASTNode> parseStructDecl();
+
     const Token& peek() const;
     Token advance();
+    Token lookAhead(int n);
     bool isAtEnd() const;
 
 };

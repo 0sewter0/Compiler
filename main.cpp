@@ -1,5 +1,8 @@
 #include <string>
 #include <iostream>
+#include <sstream>
+#include <fstream>
+#include <filesystem>
 
 #include "builtin.h"
 #include "lexer.h"
@@ -13,16 +16,28 @@ std::unique_ptr<llvm::Module> TheModule;
 SymbolTable symbolTable;
 std::vector<LoopBlocks> LoopStack;
 
+std::string readFile(const std::string& filename) {
+    std::ifstream file(filename);
+    if(!file.is_open()) {
+        std::cerr << "Error: Couldn't open file " << filename << std::endl;
+        exit(1);
+    }
+    std::stringstream buffer;
+    buffer << file.rdbuf();
+    return buffer.str();
+}
+
 int main() {
+    std::string filename = (std::filesystem::path(__argv[0]).parent_path() / "test.zH").string();
+    if(__argc > 1) {
+        filename = __argv[1];
+    }
+
+    std::string sourceCode = readFile(filename);
+
     TheModule = std::make_unique<llvm::Module>("SRZCompiler", Context);
     initBuiltins(TheModule.get());
 
-    std::string sourceCode = 
-    "int main() {"
-    "    int arr[18];"
-    "    arr[17] = 412;"
-    "    return arr[17];"
-    "}";
     Lexer lexer(sourceCode);
     auto tokens = lexer.tokenize();
 
@@ -33,10 +48,10 @@ int main() {
     Parser parser(tokens);
 
     while(parser.peek().type != TokenType::Eof) {
-        if(auto node = parser.parseDefinition()) {
+        if(auto node = parser.parseTopLevel()) {
             node->codegen();
         } else {
-            std::cerr << "Parsing error encountered\n";
+            std::cerr << "Parsing error encountered at token: " << parser.peek().lexeme << std::endl;
             break;
         }
     }

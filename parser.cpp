@@ -3,12 +3,24 @@
 
 Parser::Parser(const std::vector<Token>& tokens) : tokens(tokens) {}
 
-bool Parser::match(TokenType type) { //Checks the current Token
+bool Parser::match(TokenType type) { // Checks the current Token
     if(peek().type == type) {
-        advance();
-        return true;
+        if(!isAtEnd()) {
+            advance();
+            return true;
+        }
     }
     return false;
+}
+
+Token Parser::lookAhead(int n) {
+    if(pos + n < static_cast<int>(tokens.size()) && (pos + n) >= 0) {
+        return tokens[pos + n];
+    }
+    if(!tokens.empty()) {
+        return tokens.back();
+    }
+    return Token{TokenType::Eof, ""};
 }
 
 Token Parser::consume(TokenType type, const std::string& message) { // Checks the current token AND if its true returns it, else calls error(advance() makes pos++).
@@ -27,10 +39,10 @@ Token Parser::GetNextTok() {
 }
 
 bool Parser::isAtEnd() const {
-    if(pos >= tokens.size() || tokens[pos].type == TokenType::Eof) {
+    if(pos >= tokens.size()) {
         return true;
     } else {
-        return false;
+        return tokens[pos].type == TokenType::Eof;
     }
 }
 
@@ -43,107 +55,12 @@ const Token& Parser::peek() const {
     if(isAtEnd()) {
         return tokens.back();
     }
-    return Parser::tokens[pos];
+    return tokens[pos];
 }
 
 Token Parser::advance() {
-    if(!isAtEnd()) pos++;
-    return tokens[pos - 1];
-}
-
-std::unique_ptr<ExprNode> Parser::parsePrimary() {
-    const Token& current = peek();
-
-    if(current.type == TokenType::Number) {
-        Token num = advance();
-        int val = std::stoi(num.lexeme);
-        return std::make_unique<NumberExprAST>(val);
-    } else if(current.type == TokenType::Identifier) {
-        Token var = advance();
-        if(peek().type == TokenType::LParen) {
-            return parseCallExpr(var.lexeme);
-        }
-        if(peek().type == TokenType::LBracket) {
-            advance();
-            auto index = parseExpr();
-            consume(TokenType::RBracket, "Syntax error: Expected ']'");
-
-            if(peek().type == TokenType::Assign) {
-                advance();
-                auto Val = parseExpr();
-                return std::make_unique<ArrayAssignAST>(std::move(index), std::move(Val), var.lexeme);
-            }
-
-            return std::make_unique<ArrayAccessAST>(var.lexeme, std::move(index));
-        }
-        return std::make_unique<VariableExprAST>(var.lexeme);
-    } else if(current.type == TokenType::LParen) {
-        advance();
-        std::unique_ptr<ExprNode> expr = parseExpr();
-        consume(TokenType::RParen, "Expected ')' after '('");
-        return expr;
-    }
-
-    error("Unknown object: '" + peek().lexeme + "' of type " + std::to_string((int)peek().type));
-    return nullptr;
-}
-
-std::unique_ptr<ExprNode> Parser::parseTerm() {
-    std::unique_ptr<ExprNode> left = parsePrimary();
-
-    while(peek().type == TokenType::Star || peek().type == TokenType::Slash) {
-        Token op = advance();
-        std::unique_ptr<ExprNode> right = parsePrimary();
-        
-        auto newLeft = std::make_unique<BinaryExprAST>(op.lexeme[0], std::move(left), std::move(right)); // creating new node
-        left = std::move(newLeft);
-    }
-    return left;
-}
-
-std::unique_ptr<ExprNode> Parser::parseExpr() {
-    std::unique_ptr<ExprNode> left = parseTerm();
-
-    while(peek().type == TokenType::Plus || peek().type == TokenType::Minus) {
-        Token op = advance();
-        std::unique_ptr<ExprNode> right = parseTerm();
-
-        auto newLeft = std::make_unique<BinaryExprAST>(op.lexeme[0], std::move(left), std::move(right)); // creating new node
-        left = std::move(newLeft);
-    }
-    return left;
-}
-
-std::unique_ptr<ASTNode> Parser::parseVarDecl() {
-    advance();
-
-    Token idToken = consume(TokenType::Identifier, "Expected variable name after 'int'");
-
-    if(peek().type == TokenType::LBracket) {
-        advance();
-        int size = 0;
-        
-        if(peek().type == TokenType::Number) {
-            size = std::stoi(peek().lexeme);
-            advance();
-        } else {
-            error("Runtime error: Expected constant array size inside '[' and ']'");
-            return nullptr;
-        }
-        consume(TokenType::RBracket, "Syntax error: Expected ']' after array size");
-
-        consume(TokenType::Semicolon, "Syntax error: Expected ';' after declaration");
-
-        return std::make_unique<ArrayDeclAST>(idToken.lexeme, size);
-    }
-
-    consume(TokenType::Assign, "Expected '=' after variable name");
-
-    std::unique_ptr<ExprNode> initializer = parseExpr();
-
-    consume(TokenType::Semicolon, "Expected ';' at the end of instruction");
-
-    return std::make_unique<VarDecAST>(idToken.lexeme, std::move(initializer));
+    if(!isAtEnd()) return tokens[pos++];
+    return tokens.empty() ? Token{TokenType::Eof, ""} : tokens.back();
 }
 
 std::unique_ptr<IfStmtAST> Parser::parseIfStmt() {
@@ -164,6 +81,9 @@ std::unique_ptr<IfStmtAST> Parser::parseIfStmt() {
 }
 
 std::unique_ptr<ASTNode> Parser::parseStatement() {
+    if(peek().type == TokenType::RBrace || isAtEnd()) {
+        return nullptr;
+    }
     if(match(TokenType::LBrace)) {
         return parseBlock();
     }
@@ -176,8 +96,15 @@ std::unique_ptr<ASTNode> Parser::parseStatement() {
         return parseIfStmt();
     }
 
+    if(peek().type == TokenType::kwStruct) {
+        if(lookAhead(1).type == TokenType::Identifier && lookAhead(2).type == TokenType::LBrace) {
+            return parseStructDecl();
+        }
+        return parseVarDecl();
+    }
+
     if(peek().type == TokenType::KwInt) {
-        if(tokens[pos+2].type == TokenType::LParen) {
+        if(lookAhead(2).type == TokenType::LParen) {
             return parseDefinition();
         }
         return parseVarDecl();
@@ -193,7 +120,6 @@ std::unique_ptr<ASTNode> Parser::parseStatement() {
 }
 
 std::unique_ptr<ExprNode> Parser::parseCallExpr(std::string name) {
-    advance();
     std::vector<std::unique_ptr<ExprNode>> args;
 
     if(peek().type != TokenType::RParen) {
@@ -220,55 +146,8 @@ std::unique_ptr<ASTNode> Parser::parseBlock() {
     return std::make_unique<BlockAST>(std::move(stmts));
 }
 
-std::unique_ptr<ASTNode> Parser::parseWhileLoop() {
-    match(TokenType::kwWhile);
-
-    consume(TokenType::LParen, "Syntax error: Expected '(' after while");
-
-    auto cond = parseExpr();
-
-    consume(TokenType::RParen, "Syntax error: Expected ')' after condition");
-
-    auto body = parseStatement();
-
-    return std::make_unique<WhileLoopAST>(std::move(cond), std::move(body));
-}
-
-std::unique_ptr<PrototypeAST> Parser::parsePrototype() {
-    std::string FuncName = peek().lexeme;
-    consume(TokenType::Identifier, "Syntax error: Expected function name in prototype");
-
-    consume(TokenType::LParen, "Syntax error: Expected '(' in prototype");
-
-    std::vector<std::string> ArgNames;
-    
-    while(peek().type == TokenType::KwInt) {
-        advance();
-        ArgNames.push_back(peek().lexeme);
-        advance();
-        if(peek().type == TokenType::Comma) {
-            advance();
-        }
-    }
-    consume(TokenType::RParen, "Syntax error: Expected ')' in prototype");
-
-    return std::make_unique<PrototypeAST>(FuncName, std::move(ArgNames));
-}
-
-std::unique_ptr<FunctionAST> Parser::parseDefinition() {
-    advance();
-    auto Prototype = parsePrototype();
-    if(!Prototype) return nullptr;
-
-    if(peek().type == TokenType::LBrace) {
-        auto Body = parseStatement();
-        return std::make_unique<FunctionAST>(std::move(Prototype), std::move(Body));
-    }
-
-    return nullptr;
-}
-
 std::unique_ptr<ASTNode> Parser::parseReturnStmt() {
+    TRACE_PARSER;
     advance();
 
     std::unique_ptr<ASTNode> Expr = nullptr;
@@ -281,25 +160,46 @@ std::unique_ptr<ASTNode> Parser::parseReturnStmt() {
     return std::make_unique<ReturnStmtAST>(std::move(Expr));
 }
 
+std::unique_ptr<ASTNode> Parser::parseTopLevel() {
+    TRACE_PARSER;
+    while(peek().type == TokenType::Semicolon) {
+        advance();
+    }
+    if(isAtEnd()) return nullptr;
+
+
+    if(peek().type == TokenType::kwStruct) {
+        if(lookAhead(1).type == TokenType::Identifier && lookAhead(2).type == TokenType::LBrace) {
+            return parseStructDecl();
+        }
+
+        if(peek().type == TokenType::KwInt || peek().type == TokenType::kwFloat) {
+            if(lookAhead(1).type == TokenType::Identifier && lookAhead(2).type == TokenType::LParen) {
+                return parseDefinition();
+            } else if(lookAhead(1).type == TokenType::Identifier) {
+                return parseVarDecl();
+            } else {
+                error("Syntax error: Expected Variable name, function name after 'int'");
+                throw std::runtime_error(".");
+            }
+        }
+    }
+    return parseStatement();
+}
+
 std::unique_ptr<ASTNode> Parser::parse() {
     pos = 0;
     std::vector<std::unique_ptr<ASTNode>> statements;
 
     try {
-        while(!isAtEnd()) {
-            if(tokens[pos].type == TokenType::KwInt || tokens[pos].type == TokenType::kwIf || tokens[pos].type == TokenType::LBrace || tokens[pos].type == TokenType::kwWhile) {
-                statements.push_back(parseStatement());
-            }
-            else {
-                statements.push_back(parseExpr());
-
-                if(tokens[pos].type != TokenType::RBrace) {
-                    consume(TokenType::Semicolon, "Expected ';' at the end of instruction");
-                }
+        while(!isAtEnd() && peek().type != TokenType::Eof) {
+            if(auto node = parseTopLevel()) {
+                statements.push_back(std::move(node));
             }
         }   
     }
     catch(const SyntaxError& e) {
+        std::cerr << e.what() << std::endl;
         return nullptr;
     }
 
