@@ -16,6 +16,16 @@ std::unique_ptr<ASTNode> Parser::parseVarDecl() {
         throw std::runtime_error("Expected type specifier");
     }
     std::string varName = consume(TokenType::Identifier, "Syntax error: Expected variable name after type").lexeme;
+
+    if(match(TokenType::LBracket)) {
+        auto sizeToken = consume(TokenType::Number, "Syntax error: Expected array size");
+
+        consume(TokenType::RBracket, "Syntax error: Expected ']' after array size");
+        consume(TokenType::Semicolon, "Syntax error: Expected ';' after array declaration");
+        
+        return std::make_unique<ArrayDeclAST>(varName, std::stoi(sizeToken.lexeme));
+    }
+
     std::unique_ptr<ExprNode> initVal = nullptr;
 
     if(match(TokenType::Assign)) {

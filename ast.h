@@ -698,6 +698,27 @@ public:
                 return value;
             }
 
+            if(auto* access = dynamic_cast<ArrayAccessAST*>(left.get())) {
+                auto* base = dynamic_cast<VariableExprAST*>(access->base.get());
+                if(!base) {
+                    throw std::runtime_error("Nested array assignment is under construction");
+                }
+
+                auto symbolInfo = symbolTable.lookupVariable(base->name);
+                if(!symbolInfo.Alloca) {
+                    throw std::runtime_error("Unknown array: " + base->name);
+                }
+
+                llvm::Value* indexValue = access->index->codegen();
+                auto elementPointer = Builder.CreateGEP(
+                    symbolInfo.Alloca->getAllocatedType(),
+                    symbolInfo.Alloca,
+                    {Builder.getInt32(0), indexValue},
+                    base->name + ".element.ptr");
+                Builder.CreateStore(value, elementPointer);
+                return value;
+            }
+
             throw std::runtime_error("Invalid assignment target");
         }
 
