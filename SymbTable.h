@@ -4,7 +4,15 @@
 #include <string>
 #include <stdexcept>
 
+#include "llvm/IR/Constants.h"
 #include "llvm/IR/Instructions.h"
+
+enum class VariableType {
+    Basic,
+    StaticArray,
+    RuntimeArray,
+    Vector
+};
 
 struct StructTypeInfo {
     llvm::StructType* type;
@@ -12,8 +20,12 @@ struct StructTypeInfo {
 };
 
 struct SymbolInfo {
-    llvm::AllocaInst* Alloca;
+    llvm::AllocaInst* Alloca = nullptr;
     std::string typeName;
+    VariableType variableType = VariableType::Basic;
+    // llvm.lifetime.* requires a constant size. Dynamic arrays use -1,
+    // which means that the exact size is unknown
+    llvm::ConstantInt* lifetimeSize = nullptr;
 };
 
 class SymbolTable {
@@ -43,7 +55,11 @@ public:
         return nullptr;
     }
 
-    void declareVariable(const std::string& name, llvm::AllocaInst* alloca, const std::string& typeName = "") {
+    void declareVariable(const std::string& name,
+                         llvm::AllocaInst* alloca,
+                         const std::string& typeName = "",
+                         VariableType variableType = VariableType::Basic,
+                         llvm::ConstantInt* lifetimeSize = nullptr) {
         
         if(scopes.empty()) throw std::runtime_error("No active scope for declaration");
 
@@ -51,7 +67,7 @@ public:
             throw std::runtime_error("Redefinition of variable: " + name);
         }
 
-        scopes.back()[name] = {alloca, typeName};
+        scopes.back()[name] = {alloca, typeName, variableType, lifetimeSize};
     }
 
     SymbolInfo lookupVariable(const std::string& name) {
@@ -63,6 +79,16 @@ public:
         }
 
         return {nullptr, ""};
+    }
+
+    std::vector<SymbolInfo> activeVariables() const {
+        std::vector<SymbolInfo> variables;
+        for(const auto& scope : scopes) {
+            for(const auto& [name, info] : scope) {
+                variables.push_back(info);
+            }
+        }
+        return variables;
     }
 };
 
