@@ -1,5 +1,5 @@
-#include "ast.h"
-#include "parser.h"
+#include "include/ast.h"
+#include "include/parser.h"
 
 std::unique_ptr<PrototypeAST> Parser::parsePrototype() {
     std::string FuncName = peek().lexeme;
@@ -11,7 +11,9 @@ std::unique_ptr<PrototypeAST> Parser::parsePrototype() {
     
     while(peek().type == TokenType::KwInt) {
         advance();
+
         ArgNames.push_back(peek().lexeme);
+        
         advance();
         if(peek().type == TokenType::Comma) {
             advance();

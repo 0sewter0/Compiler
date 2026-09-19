@@ -263,6 +263,7 @@ public:
     void print(int indent = 0) const override {
         std::string space(indent*2, ' ');
         std::cout << space << "CallExpr:" << Callee;
+
         for(const auto& arg : Args) {
             if(arg) arg->print(indent+1);
         }
@@ -333,6 +334,8 @@ public:
     llvm::Value* codegen() override;
 };
 
+/*--------------------------------------------------------------------------------------------------------------*/
+
 class NumberExprAST : public ExprNode {
 public:
     int value;
@@ -390,6 +393,8 @@ public:
         std::cout << space << "Unary Expression(op: " << op << ", operand: " << operand;
     }
 };
+
+/*--------------------------------------------------------------------------------------------------------------*/
 
 class VarDecAST : public ASTNode { // For varibale declaration
 public:

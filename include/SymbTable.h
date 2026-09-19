@@ -23,7 +23,7 @@ struct SymbolInfo {
     llvm::AllocaInst* Alloca = nullptr;
     std::string typeName;
     VariableType variableType = VariableType::Basic;
-    // llvm.lifetime.* requires a constant size. Dynamic arrays use -1,
+    // llvm.lifetime.* requires a constant size. VLA arrays use -1,
     // which means that the exact size is unknown
     llvm::ConstantInt* lifetimeSize = nullptr;
 };

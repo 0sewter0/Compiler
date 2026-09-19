@@ -38,6 +38,10 @@ enum class TokenType {
     Equal,
     NotEqual,
 
+    include,
+
+    Equation,
+
     Eof,
     Unknown
 };

@@ -65,6 +65,8 @@ public:
     Token lookAhead(int n);
     bool isAtEnd() const;
 
+    std::unique_ptr<ExprNode> parseEquation();
+
 };
 
 class SyntaxError : public std::runtime_error {

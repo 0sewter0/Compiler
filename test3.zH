@@ -1,0 +1,16 @@
+struct Car {
+    int vel;
+    int pos;
+}
+
+int main() {
+    struct Car car1;
+    car1.vel = 60;
+    int time = 10;
+    int currime = 0;
+    while(currime < time) {
+        currime = currime + 1;
+        car1.pos = car1.pos + car1.vel;
+    }
+    return car1.pos;
+}

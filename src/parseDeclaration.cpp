@@ -1,5 +1,5 @@
-#include "parser.h"
-#include "ast.h"
+#include "include/parser.h"
+#include "include/ast.h"
 
 std::unique_ptr<ASTNode> Parser::parseVarDecl() {
     std::string typeName;

@@ -2,11 +2,10 @@
 #include <iostream>
 #include <sstream>
 #include <fstream>
-#include <filesystem>
 
 #include "builtin.h"
 #include "lexer.h"
-#include "parser.h"
+#include "include/parser.h"
 #include "SymbTable.h"
 #include "ast.h"
 
@@ -27,10 +26,19 @@ std::string readFile(const std::string& filename) {
     return buffer.str();
 }
 
-int main() {
-    std::string filename = (std::filesystem::path(__argv[0]).parent_path() / "test.zH").string();
-    if(__argc > 1) {
-        filename = __argv[1];
+std::string getExecutableDir(const std::string &execPath) {
+    size_t lastSlash = execPath.find_last_of("/\\");
+    if(lastSlash == std::string::npos) {
+        return "";
+    }
+    return execPath.substr(0, lastSlash + 1);
+}
+
+int main(int argc, char* argv[]) {
+    std::string filename = getExecutableDir(argv[0]) + "test.zH";
+
+    if(argc > 1) {
+        filename = argv[1];
     }
 
     std::string sourceCode = readFile(filename);

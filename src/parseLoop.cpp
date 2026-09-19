@@ -1,5 +1,5 @@
-#include "ast.h"
-#include "parser.h"
+#include "include/ast.h"
+#include "include/parser.h"
 
 std::unique_ptr<ASTNode> Parser::parseWhileLoop() {
     match(TokenType::kwWhile);

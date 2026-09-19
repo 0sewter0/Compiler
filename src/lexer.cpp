@@ -49,6 +49,9 @@ Token Lexer::makeIdentiferOrKeyword() {
     else if(text == "else") type = TokenType::kwElse;
     else if(text == "while") type = TokenType::kwWhile;
     else if(text == "struct") type = TokenType::kwStruct;
+    else if(text == "include") type = TokenType::include;
+
+    else if(text == "equation") type = TokenType::Equation;
 
     return Token{type, text, line, Startcol};
 }

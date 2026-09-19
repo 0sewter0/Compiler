@@ -1,5 +1,5 @@
-#include "ast.h"
-#include "codegenHelpers.h"
+#include "include/ast.h"
+#include "include/codegenHelpers.h"
 
 llvm::Value* VariableExprAST::codegen() {
     auto symbolInfo = symbolTable.lookupVariable(name);

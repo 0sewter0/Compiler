@@ -1,6 +1,6 @@
-#include "ast.h"
-#include "parser.h"
-#include "token.h"
+#include "include/ast.h"
+#include "include/parser.h"
+#include "include/token.h"
 
 bool isRightAssoc(TokenType type) {
     return type == TokenType::Caret;
@@ -87,4 +87,8 @@ std::unique_ptr<ExprNode> Parser::parseExpr(int precedence) {
         lhs = std::make_unique<BinaryExprAST>(op.lexeme, std::move(lhs), std::move(rhs));
     }
     return lhs;
+}
+
+std::unique_ptr<ExprNode> Parser::parseEquation() {
+    advance();
 }
