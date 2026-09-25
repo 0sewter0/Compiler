@@ -31,8 +31,11 @@ std::unique_ptr<ExprNode> Parser::parsePrimary() {
     TRACE_PARSER;
     switch(peek().type) {
         case TokenType::Number: {
-            auto node = std::make_unique<NumberExprAST>(std::stoi(advance().lexeme));
-            return node;
+            std::string lexeme = advance().lexeme;
+            if (lexeme.find('.') != std::string::npos) {
+                return std::make_unique<FloatExprAST>(std::stof(lexeme));
+            }
+            return std::make_unique<NumberExprAST>(std::stoi(lexeme));
         }
         case TokenType::Identifier: {
             std::string name = advance().lexeme;
@@ -87,8 +90,4 @@ std::unique_ptr<ExprNode> Parser::parseExpr(int precedence) {
         lhs = std::make_unique<BinaryExprAST>(op.lexeme, std::move(lhs), std::move(rhs));
     }
     return lhs;
-}
-
-std::unique_ptr<ExprNode> Parser::parseEquation() {
-    advance();
 }

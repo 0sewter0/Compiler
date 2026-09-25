@@ -1,5 +1,5 @@
-#include "lexer.h"
 #include <cctype>
+#include "lexer.h"
 
 Lexer::Lexer(const std::string& source) : src(source) {}
 
@@ -30,6 +30,14 @@ Token Lexer::makeNumber() {
     while(!isAtEnd() && std::isdigit(peek())) {
         numstr += advance();
     }
+
+    if(!isAtEnd() && peek() == '.' && isdigit(src[pos + 1])) {
+        numstr += advance();
+        while(!isAtEnd() && std::isdigit(peek())) {
+            numstr += advance();
+        }
+    }
+
     return Token{TokenType::Number, numstr, line, Startcol};
 }
 
@@ -82,7 +90,7 @@ std::vector<Token> Lexer::tokenize() {
             case '+': advance(); tokens.push_back({TokenType::Plus, "+", line, startCol}); break;
             case '-': advance(); tokens.push_back({TokenType::Minus, "-", line, startCol}); break;
             case '*': advance(); tokens.push_back({TokenType::Star, "*", line, startCol}); break;
-            case '/': advance(); tokens.push_back({TokenType::Star, "/", line, startCol}); break;
+            case '/': advance(); tokens.push_back({TokenType::Slash, "/", line, startCol}); break;
             case ';': advance(); tokens.push_back({TokenType::Semicolon, ";", line, startCol}); break;
             case '(': advance(); tokens.push_back({TokenType::LParen, "(", line, startCol}); break;
             case ')': advance(); tokens.push_back({TokenType::RParen, ")", line, startCol}); break;

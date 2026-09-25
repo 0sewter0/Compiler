@@ -30,7 +30,7 @@ std::unique_ptr<FunctionAST> Parser::parseDefinition() {
     if(!Prototype) return nullptr;
 
     if(peek().type == TokenType::LBrace) {
-        consume(TokenType::LBrace, "Syntax error: Expected '{' in function definition");
+        advance();
         auto Body = parseBlock();
         if(!Body) return nullptr;
 

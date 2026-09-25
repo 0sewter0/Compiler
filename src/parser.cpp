@@ -1,5 +1,5 @@
-#include "include/parser.h"
 #include <iostream>
+#include "include/parser.h"
 
 Parser::Parser(const std::vector<Token>& tokens) : tokens(tokens) {}
 

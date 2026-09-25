@@ -14,6 +14,12 @@ enum class VariableType {
     Vector
 };
 
+struct FunctionInfo {
+    llvm::Function* function = nullptr;
+    llvm::Type* returnType = nullptr;
+    std::vector<llvm::Type*> paramTypes;
+};
+
 struct StructTypeInfo {
     llvm::StructType* type;
     std::unordered_map<std::string, std::pair<unsigned, llvm::Type*>> fields;
@@ -32,6 +38,8 @@ class SymbolTable {
 private:
     std::vector<std::unordered_map<std::string, SymbolInfo>> scopes;
     std::unordered_map<std::string, StructTypeInfo> structTypes;
+
+    std::unordered_map<std::string, FunctionInfo> functions;
 public:
     void pushScope() {
         scopes.emplace_back();
@@ -89,6 +97,25 @@ public:
             }
         }
         return variables;
+    }
+
+    void declareFunction(const std::string &name, llvm::Function* func, llvm::Type* retType, const std::vector<llvm::Type*> &ParamTypes) {
+        if(functions.count(name)) {
+            throw std::runtime_error("Redefinition of function: " + name);
+        }                    
+        functions[name] = {func, retType, ParamTypes};
+    }
+
+    const FunctionInfo* lookupFunction(const std::string &name) const {
+        auto it = functions.find(name);
+        if(it != functions.end()) {
+            return &it->second;
+        }
+        return nullptr;
+    }
+
+    bool hasFunction(const std::string &name) const {
+        return functions.count(name) > 0;
     }
 };
 

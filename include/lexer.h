@@ -1,7 +1,7 @@
 #pragma once
-#include "token.h"
 #include <vector>
 #include <string>
+#include "token.h"
 
 class Lexer {
 public:

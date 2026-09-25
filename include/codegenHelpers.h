@@ -1,5 +1,5 @@
 #pragma once
-#include "ast.h"
+#include "include/ast.h"
 
 llvm::AllocaInst* createEntryBlockAlloca(llvm::Function* TheFunction, const std::string& VarName, llvm::Type* VarTy);
 llvm::Type* getTypeByName(const std::string& name);

@@ -142,20 +142,6 @@ public:
     }
 };
 
-class ArrayDeclAST : public ASTNode {
-public:
-    std::string name;
-    int size;
-
-    ArrayDeclAST(std::string Name, int Size) : name(Name), size(Size) {}
-
-    llvm::Value* codegen() override;
-    void print(int indent = 0) const override {
-        std::string space(indent*2, ' ');
-        std::cout << space << "Array Declaration(name: " << name << ", size: " << size << ")\n";
-    }
-};
-
 class ArrayAssignAST : public ExprNode {
 public:
     std::unique_ptr<ExprNode> index;
@@ -403,11 +389,30 @@ public:
     std::unique_ptr<ExprNode> initializer;
 
     VarDecAST(std::string name, std::unique_ptr<ExprNode> init, std::string TypeName) : name(std::move(name)), initializer(std::move(init)), typeName(std::move(TypeName)) {}
+    ~VarDecAST() override;
 
     void print(int indent = 0) const override {
         std::string space(indent * 2, ' ');
         std::cout << space << "VarDecl(" << name << ")\n";
         if(initializer) initializer->print(indent+1);
+    }
+    llvm::Value* codegen() override;
+};
+
+class ArrayDeclAST : public ASTNode {
+public:
+    std::string name;
+    std::string typeName;
+    std::unique_ptr<ExprNode> sizeExpr;
+
+    ArrayDeclAST(std::string Name, std::unique_ptr<ExprNode> SizeExpr, std::string TypeName = "int")
+        : name(std::move(Name)), sizeExpr(std::move(SizeExpr)), typeName(std::move(TypeName)) {}
+    ~ArrayDeclAST() override;
+
+    void print(int indent = 0) const override {
+        std::string space(indent * 2, ' ');
+        std::cout << space << "ArrayDecl(" << name << ")\n";
+        if(sizeExpr) sizeExpr->print(indent + 1);
     }
 
     llvm::Value* codegen() override;

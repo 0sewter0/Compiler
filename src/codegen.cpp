@@ -85,6 +85,7 @@ llvm::Value* StructAssignAST::codegen() {
 llvm::Value* ArrayAccessAST::codegen() {
     llvm::Value* elementPointer = codegenAddress();
     if(!elementPointer) return nullptr;
+
     return Builder.CreateLoad(Builder.getInt32Ty(), elementPointer, "array.value");
 }
 
@@ -101,20 +102,6 @@ llvm::Value* ArrayAccessAST::codegenAddress() {
     llvm::Value* elementPtr = createArrayElementPointer(arrayInfo, indexValue, "arrayidx");
 
     return elementPtr;
-}
-
-llvm::Value* ArrayDeclAST::codegen() {
-    llvm::ArrayType* arrayType = llvm::ArrayType::get(Builder.getInt32Ty(), size);
-
-    llvm::AllocaInst* alloca = Builder.CreateAlloca(arrayType, nullptr, name);
-
-    llvm::ConstantInt* lifetimeSize = Builder.getInt64(TheModule->getDataLayout().getTypeAllocSize(arrayType));
-
-    Builder.CreateLifetimeStart(alloca, lifetimeSize);
-
-    symbolTable.declareVariable(name, alloca, "int", VariableType::StaticArray, lifetimeSize);
-
-    return alloca;
 }
 
 llvm::Value* ArrayAssignAST::codegen() {
@@ -139,7 +126,7 @@ llvm::Value* VLADeclAST::codegen() {
 
     llvm::ConstantInt* unknownSize = Builder.getInt64(-1);
 
-    Builder.CreateLifetimeStart(alloca, unknownSize);
+    Builder.CreateLifetimeStart(alloca);
 
     symbolTable.declareVariable(arrayName, alloca, "int", VariableType::RuntimeArray, unknownSize);
     return alloca;
@@ -224,14 +211,20 @@ llvm::Value* BlockAST::codegen() {
 }
 
 llvm::Value* CallExprAST::codegen() {
-    llvm::Function* callee = TheModule->getFunction(Callee);
-    if(!callee) return nullptr;
+    const FunctionInfo* funcInfo = symbolTable.lookupFunction(Callee);
+    if(!funcInfo) throw std::runtime_error("Undefined function: " + Callee);
 
-    std::vector<llvm::Value*> arguments;
+    if(Args.size() != funcInfo->paramTypes.size()) {
+        throw std::runtime_error("Function " + Callee + " expects " + std::to_string(funcInfo->paramTypes.size()) + " arguments, but " + std::to_string(Args.size()) + " provided");
+    }
 
-    for(auto& argument : Args) arguments.push_back(argument->codegen());
+    std::vector<llvm::Value*> argsV;
+    for(size_t i = 0; i < Args.size(); i++) {
+        llvm::Value* argVal = Args[i]->codegen();
+        argsV.push_back(argVal);
+    }
 
-    return Builder.CreateCall(callee, arguments, "calltmp");
+    return Builder.CreateCall(funcInfo->function, argsV, "calltmp");
 }
 
 llvm::Value* PrototypeAST::codegen() {
@@ -239,6 +232,8 @@ llvm::Value* PrototypeAST::codegen() {
 
     llvm::FunctionType* functionType = llvm::FunctionType::get(llvm::Type::getInt32Ty(Context), types, false);
     llvm::Function* function = llvm::Function::Create(functionType, llvm::Function::ExternalLinkage, Name, TheModule.get());
+
+    symbolTable.declareFunction(Name, function, llvm::Type::getInt32Ty(Context), types);
 
     unsigned index = 0;
 
@@ -355,6 +350,7 @@ llvm::Value* UnaryMinusExprAST::codegen() {
     throw std::runtime_error("Unknown unary operator");
 }
 
+VarDecAST::~VarDecAST() = default;
 llvm::Value* VarDecAST::codegen() {
     llvm::Function* function = Builder.GetInsertBlock()->getParent();
 
@@ -362,7 +358,7 @@ llvm::Value* VarDecAST::codegen() {
     
     llvm::AllocaInst* alloca = createEntryBlockAlloca(function, name, variableType);
     llvm::ConstantInt* lifetimeSize = Builder.getInt64(TheModule->getDataLayout().getTypeAllocSize(variableType));
-    Builder.CreateLifetimeStart(alloca, lifetimeSize);
+    Builder.CreateLifetimeStart(alloca);
 
     if(initializer) {
         llvm::Value* initialValue = initializer->codegen();
@@ -371,6 +367,21 @@ llvm::Value* VarDecAST::codegen() {
     }
     symbolTable.declareVariable(name, alloca, typeName, VariableType::Basic, lifetimeSize);
 
+    return alloca;
+}
+
+ArrayDeclAST::~ArrayDeclAST() = default;
+
+llvm::Value* ArrayDeclAST::codegen() {
+    llvm::Function* function = Builder.GetInsertBlock()->getParent();
+    llvm::Type* elementType = getTypeByName(typeName);
+    llvm::Value* count = sizeExpr ? sizeExpr->codegen() : llvm::ConstantInt::get(Context, llvm::APInt(32, 1, true));
+    if(!count) return nullptr;
+
+    llvm::AllocaInst* alloca = Builder.CreateAlloca(elementType, count, name);
+    llvm::ConstantInt* lifetimeSize = Builder.getInt64(TheModule->getDataLayout().getTypeAllocSize(elementType));
+    Builder.CreateLifetimeStart(alloca);
+    symbolTable.declareVariable(name, alloca, typeName, VariableType::StaticArray, lifetimeSize);
     return alloca;
 }
 

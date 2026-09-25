@@ -18,28 +18,19 @@ std::unique_ptr<ASTNode> Parser::parseVarDecl() {
     std::string varName = consume(TokenType::Identifier, "Syntax error: Expected variable name after type").lexeme;
 
     if(match(TokenType::LBracket)) {
-        if(peek().type == TokenType::Number && lookAhead(1).type == TokenType::RBracket) {
-            auto size = consume(TokenType::Number, "Syntax error: Expected array size");
-
-            consume(TokenType::RBracket, "Syntax error: Expected ']' after array size");
-            consume(TokenType::Semicolon, "Syntax error: Expected ';' after array declaration");
-
-            return std::make_unique<ArrayDeclAST>(varName, std::stoi(size.lexeme));
-        }
-
-        auto size = parseExpr();
+        auto sizeExpr = std::make_unique<NumberExprAST>(std::stoi(consume(TokenType::Number, "Syntax error: Expected array size").lexeme));
 
         consume(TokenType::RBracket, "Syntax error: Expected ']' after array size");
         consume(TokenType::Semicolon, "Syntax error: Expected ';' after array declaration");
-        
-        return std::make_unique<VLADeclAST>(varName, std::move(size));
+
+        return std::make_unique<ArrayDeclAST>(varName, std::move(sizeExpr), typeName);
     }
 
     std::unique_ptr<ExprNode> initVal = nullptr;
-
     if(match(TokenType::Assign)) {
         initVal = parseExpr();
     }
+
     consume(TokenType::Semicolon, "Syntax error: Expected ';'");
 
     return std::make_unique<VarDecAST>(varName, std::move(initVal), typeName);

@@ -1,12 +1,13 @@
 #pragma once
-#include "ast.h"
-#include "token.h"
 
 #include <vector>
 #include <memory>
 #include <cstddef>
 #include <stdexcept>
 #include <string>
+
+#include "ast.h"
+#include "token.h"
 
 class ParseTracer {
     static inline int depth = 0;

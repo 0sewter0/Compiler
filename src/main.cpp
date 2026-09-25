@@ -2,10 +2,13 @@
 #include <iostream>
 #include <sstream>
 #include <fstream>
+#include <filesystem>
+#include <stdexcept>
 
 #include "builtin.h"
 #include "lexer.h"
 #include "include/parser.h"
+#include "include/semanticAnalysis.h"
 #include "SymbTable.h"
 #include "ast.h"
 
@@ -15,33 +18,26 @@ std::unique_ptr<llvm::Module> TheModule;
 SymbolTable symbolTable;
 std::vector<LoopBlocks> LoopStack;
 
-std::string readFile(const std::string& filename) {
+std::string readFile(const std::filesystem::path& filename) {
     std::ifstream file(filename);
-    if(!file.is_open()) {
-        std::cerr << "Error: Couldn't open file " << filename << std::endl;
-        exit(1);
+    if(!file) {
+        throw std::runtime_error("Couldn't open file: " + filename.string());
     }
     std::stringstream buffer;
     buffer << file.rdbuf();
     return buffer.str();
 }
 
-std::string getExecutableDir(const std::string &execPath) {
-    size_t lastSlash = execPath.find_last_of("/\\");
-    if(lastSlash == std::string::npos) {
-        return "";
-    }
-    return execPath.substr(0, lastSlash + 1);
-}
-
 int main(int argc, char* argv[]) {
-    std::string filename = getExecutableDir(argv[0]) + "test.zH";
+    std::filesystem::path filename = argc > 1 ? std::filesystem::path(argv[1]) : std::filesystem::path(argv[0]).parent_path() / "test.zh";
 
-    if(argc > 1) {
-        filename = argv[1];
+    std::string sourceCode;
+    try {
+        sourceCode = readFile(filename);
+    } catch(const std::exception& error) {
+        std::cerr << "Error: " << error.what() << std::endl;
+        return 1;
     }
-
-    std::string sourceCode = readFile(filename);
 
     TheModule = std::make_unique<llvm::Module>("SRZCompiler", Context);
     initBuiltins(TheModule.get());
@@ -49,23 +45,45 @@ int main(int argc, char* argv[]) {
     Lexer lexer(sourceCode);
     auto tokens = lexer.tokenize();
 
-    for(const auto &tok : tokens) {
-        std::cout << "token: type=" << static_cast<int>(tok.type) << " | Lexeme='" << tok.lexeme << "'\n";
-    }
-
     Parser parser(tokens);
 
+    std::vector<std::unique_ptr<ASTNode>> program;
+
+    bool parseSucceeded = true;
     while(parser.peek().type != TokenType::Eof) {
         if(auto node = parser.parseTopLevel()) {
-            node->codegen();
+            program.push_back(std::move(node));
         } else {
             std::cerr << "Parsing error encountered at token: " << parser.peek().lexeme << std::endl;
+            parseSucceeded = false;
             break;
+        }
+    }
+
+    if(!parseSucceeded) {
+        return 1;
+    }
+
+    try {
+        SemanticAnalyzer semanticAnalyzer;
+        semanticAnalyzer.analyze(program);
+    } catch(const std::exception& error) {
+        std::cerr << "Semantic error: " << error.what() << std::endl;
+        return 1;
+    }
+
+    for(auto& node : program) {
+        if(node) {
+            node->codegen();
         }
     }
 
     std::error_code ec;
     llvm::raw_fd_ostream dest("output.ll", ec);
+    if(ec) {
+        std::cerr << "Error: Couldn't write output.ll: " << ec.message() << std::endl;
+        return 1;
+    }
     TheModule->print(dest, nullptr);
 
     std::cout << "success\n";
