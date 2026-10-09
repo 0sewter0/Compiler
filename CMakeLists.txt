@@ -17,6 +17,7 @@ add_definitions(${LLVM_DEFINITIONS})
 
 add_executable(compiler 
     src/main.cpp 
+    src/diagnostic.cpp
     src/MParser.cpp
     src/lexer.cpp 
     src/parser.cpp 

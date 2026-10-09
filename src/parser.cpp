@@ -1,5 +1,6 @@
 #include <iostream>
 #include "include/parser.h"
+#include "include/diagnostic.h"
 
 Parser::Parser(const std::vector<Token>& tokens) : tokens(tokens) {}
 
@@ -13,6 +14,16 @@ bool Parser::match(TokenType type) { // Checks the current Token
     return false;
 }
 
+void Parser::sync() { // Skips tokens until ';'
+    while(peek().type != TokenType::Eof && peek().type != TokenType::Semicolon && peek().type != TokenType::RBrace) {
+        advance();
+    }
+    if(peek().type == TokenType::Semicolon) {
+        advance();
+    }
+    diagnostic::is_panicking = false;
+}
+
 Token Parser::lookAhead(int n) {
     if(pos + n < static_cast<int>(tokens.size()) && (pos + n) >= 0) {
         return tokens[pos + n];
@@ -23,19 +34,21 @@ Token Parser::lookAhead(int n) {
     return Token{TokenType::Eof, ""};
 }
 
-Token Parser::consume(TokenType type, const std::string& message) { // Checks the current token AND if its true returns it, else calls error(advance() makes pos++).
+Token Parser::consume(TokenType type, const char* message) {
     if(peek().type == type) {
         return advance();
     }
-    error(message);
-    throw SyntaxError(message);
-}
 
-Token Parser::GetNextTok() {
-    if(pos == tokens.size()) {
-        return tokens.back();
+    const Token& found = peek();
+    std::string diagnostic = message;
+    
+    if(found.type == TokenType::Eof) {
+        diagnostic += ", reached end of file";
+    } else {
+        diagnostic += ", got '" + found.lexeme + "'";
     }
-    return tokens[pos+1];
+    diagnostic::recordError(diagnostic, peek());
+    return Token{TokenType::Error, "", found.line, found.col};
 }
 
 bool Parser::isAtEnd() const {
@@ -46,12 +59,7 @@ bool Parser::isAtEnd() const {
     }
 }
 
-void Parser::error(const std::string& message) {
-    const Token& token = peek();
-    std::cerr << "[Line " << token.line << ", Col " << token.col << "] Parse error: " << message << "\n";
-}
-
-const Token& Parser::peek() const {
+const Token& Parser::peek() const { // returns current token
     if(isAtEnd()) {
         return tokens.back();
     }
@@ -64,6 +72,7 @@ Token Parser::advance() {
 }
 
 std::unique_ptr<IfStmtAST> Parser::parseIfStmt() {
+    if(diagnostic::is_panicking) return nullptr;
     advance();
     consume(TokenType::LParen, "Syntax error: Expected '(' after if");
 
@@ -77,12 +86,16 @@ std::unique_ptr<IfStmtAST> Parser::parseIfStmt() {
     if(match(TokenType::kwElse)) {
         elseBrach = parseStatement();
     }
+    if(diagnostic::is_panicking || !ThenBranch) return nullptr;
     return std::make_unique<IfStmtAST>(std::move(cond), std::move(ThenBranch), std::move(elseBrach));
 }
 
 std::unique_ptr<ASTNode> Parser::parseStatement() {
     if(peek().type == TokenType::RBrace || isAtEnd()) {
         return nullptr;
+    }
+    if(peek().type == TokenType::Equation) {
+        return parseEquation();
     }
     if(match(TokenType::LBrace)) {
         return parseBlock();
@@ -94,6 +107,16 @@ std::unique_ptr<ASTNode> Parser::parseStatement() {
 
     if(peek().type == TokenType::kwIf) {
         return parseIfStmt();
+    }
+
+    if(match(TokenType::kwBreak)) {
+        consume(TokenType::Semicolon, "Expected ';' after break");
+        return std::make_unique<BreakAST>();
+    }
+
+    if(match(TokenType::kwContinue)) {
+        consume(TokenType::Semicolon, "Expected ';' after continue");
+        return std::make_unique<ContinueAST>();
     }
 
     if(peek().type == TokenType::kwStruct) {
@@ -111,6 +134,10 @@ std::unique_ptr<ASTNode> Parser::parseStatement() {
     } else if(peek().type == TokenType::kwReturn) {
         return parseReturnStmt();
     }
+    if(peek().type == TokenType::Semicolon) {
+        advance();
+        return nullptr;
+    }
 
     auto expr = parseExpr();
     if(peek().type != TokenType::RBrace) {
@@ -120,12 +147,16 @@ std::unique_ptr<ASTNode> Parser::parseStatement() {
 }
 
 std::unique_ptr<ExprNode> Parser::parseCallExpr(std::string name) {
+    if(diagnostic::is_panicking) return std::make_unique<ErrorExprNode>();
     std::vector<std::unique_ptr<ExprNode>> args;
 
     if(peek().type != TokenType::RParen) {
         while(true) {
-            args.push_back(parseExpr());
+            auto argument = parseExpr();
+
+            args.push_back(std::move(argument));
             if(peek().type == TokenType::RParen) break;
+
             consume(TokenType::Comma, "Syntax error: Expected ',' between arguments");
         }
     }
@@ -135,14 +166,21 @@ std::unique_ptr<ExprNode> Parser::parseCallExpr(std::string name) {
 }
 
 std::unique_ptr<ASTNode> Parser::parseBlock() {
+    if(diagnostic::is_panicking) return nullptr;
     std::vector<std::unique_ptr<ASTNode>> stmts;
 
     while(peek().type != TokenType::RBrace && !isAtEnd()) {
-        stmts.push_back(parseStatement());
+        auto statement = parseStatement();
+        if(statement) {
+            stmts.push_back(std::move(statement));
+        } else {
+            sync();
+        }
     }
 
     consume(TokenType::RBrace, "Expected '}' after block");
     
+    if(diagnostic::is_panicking) return nullptr;
     return std::make_unique<BlockAST>(std::move(stmts));
 }
 
@@ -157,6 +195,7 @@ std::unique_ptr<ASTNode> Parser::parseReturnStmt() {
     }
 
     consume(TokenType::Semicolon, "Syntax error: Expected ';' after return value");
+    if(diagnostic::is_panicking) return nullptr;
     return std::make_unique<ReturnStmtAST>(std::move(Expr));
 }
 
@@ -179,28 +218,38 @@ std::unique_ptr<ASTNode> Parser::parseTopLevel() {
             } else if(lookAhead(1).type == TokenType::Identifier) {
                 return parseVarDecl();
             } else {
-                error("Syntax error: Expected Variable name, function name after 'int'");
-                throw std::runtime_error(".");
+                consume(TokenType::Identifier, "Syntax error: Expected Variable name, function name after 'int'");
             }
         }
+    }
+    if(peek().type == TokenType::Equation) {
+        return parseEquation();
     }
     return parseStatement();
 }
 
 std::unique_ptr<ASTNode> Parser::parse() {
     pos = 0;
+    diagnostic::getErrors()->clear();
     std::vector<std::unique_ptr<ASTNode>> statements;
 
-    try {
-        while(!isAtEnd() && peek().type != TokenType::Eof) {
-            if(auto node = parseTopLevel()) {
-                statements.push_back(std::move(node));
+    while(!isAtEnd() && peek().type != TokenType::Eof) {
+        size_t start = pos;
+        size_t errorsBefore = diagnostic::getErrors()->size();
+        auto node = parseTopLevel();
+        if(diagnostic::getErrors()->size() != errorsBefore) {
+            if(diagnostic::is_panicking) sync();
+        } else if(node) {
+            statements.push_back(std::move(node));
+        }
+
+        if(pos == start) {
+            const Token& unexpected = peek();
+            if(diagnostic::getErrors()->size() == errorsBefore) {
+                diagnostic::getErrors()->push_back({unexpected.line, unexpected.col, 1, "Unexpected token '" + unexpected.lexeme + "'"});
             }
-        }   
-    }
-    catch(const SyntaxError& e) {
-        std::cerr << e.what() << std::endl;
-        return nullptr;
+            advance();
+        }
     }
 
     return std::make_unique<ProgramAST>(std::move(statements));

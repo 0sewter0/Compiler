@@ -37,7 +37,7 @@ struct Vector {
 
 extern std::vector<LoopBlocks> LoopStack;
 
-//Base class for all nodes
+//Base class
 class ASTNode {
 public:
     virtual ~ASTNode() = default;
@@ -57,7 +57,6 @@ public:
 class VariableExprAST : public ExprNode { 
 public:
     std::string name;
-
     explicit VariableExprAST(std::string name) : name(std::move(name)) {}
 
     void print(int indent = 0) const override {
@@ -76,6 +75,8 @@ public:
 
     llvm::Value* codegen() override;
 };
+
+/*------------------------------------------------------------------------------------------------------*/
 
 class StructDeclAST : public ASTNode {
 public:
@@ -339,6 +340,7 @@ class FloatExprAST : public ExprNode {
     float val;
 public:
     FloatExprAST(float Val) : val(Val) {}
+    float value() const { return val; }
     llvm::Value* codegen() override;
 
     void print(int indent = 0) const override {
@@ -416,6 +418,39 @@ public:
     }
 
     llvm::Value* codegen() override;
+};
+
+/*------------------------------------------------------------------------------------------------------*/
+
+class EquationAST : public ASTNode {
+public:
+    std::unique_ptr<ExprNode> left;
+    std::unique_ptr<ExprNode> right;
+    std::string varneedtofind;
+    mutable std::unique_ptr<ExprNode> solution;
+
+    EquationAST(std::unique_ptr<ExprNode> Left, std::unique_ptr<ExprNode> Right, std::string var) : left(std::move(Left)), right(std::move(Right)), varneedtofind(var) {}
+
+    llvm::Value* codegen() override;
+    void print(int indent = 0) const override {
+        std::string space(indent*2, ' ');
+        std::cout << space << "Equation AST\n";
+    }
+};
+
+/*---------------------------------------------------------------------------------------------------*/
+
+class ErrorExprNode : public ExprNode {
+public:
+    ErrorExprNode() = default;
+
+    llvm::Value* codegen() override {
+        return nullptr;
+    }
+    void print(int indent = 0) const override {
+        std::string space(indent*2, ' ');
+        std::cout << space << "ErrorExpr\n";
+    }
 };
 
 class ProgramAST : public ASTNode {

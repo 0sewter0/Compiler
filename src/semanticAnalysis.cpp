@@ -6,6 +6,172 @@ std::string getTypeNameForLiteral(const ExprNode* expr) {
     if (dynamic_cast<const FloatExprAST*>(expr)) return "float";
     return "unknown";
 }
+
+std::unique_ptr<ExprNode> cloneExpr(const ExprNode* expr) {
+    if(auto* node = dynamic_cast<const NumberExprAST*>(expr)) {
+        return std::make_unique<NumberExprAST>(node->value);
+    }
+    if(auto* node = dynamic_cast<const FloatExprAST*>(expr)) {
+        return std::make_unique<FloatExprAST>(node->value());
+    }
+    if(auto* node = dynamic_cast<const VariableExprAST*>(expr)) {
+        return std::make_unique<VariableExprAST>(node->name);
+    }
+    if(auto* node = dynamic_cast<const BinaryExprAST*>(expr)) {
+        return std::make_unique<BinaryExprAST>(node->op, cloneExpr(node->left.get()), cloneExpr(node->right.get()));
+    }
+    if(auto* node = dynamic_cast<const UnaryMinusExprAST*>(expr)) {
+        return std::make_unique<UnaryMinusExprAST>(node->op, cloneExpr(node->operand.get()));
+    }
+    throw SemanticError("Unsupported expression in equation.");
+}
+
+struct LinearForm {
+    std::unique_ptr<ExprNode> coefficient;
+    std::unique_ptr<ExprNode> remainder;
+    bool containsTarget = false;
+};
+
+std::optional<int> getIntegerConstant(const ExprNode* expr) {
+    auto* number = dynamic_cast<const NumberExprAST*>(expr);
+    if(!number) {
+        return std::nullopt;
+    }
+    return number->value;
+}
+
+bool isNumber(const ExprNode* expr, int expected) {
+    auto* number = dynamic_cast<const NumberExprAST*>(expr);
+    return number && number->value == expected;
+}
+
+std::unique_ptr<ExprNode> simplify(std::unique_ptr<ExprNode> expr) {
+    auto* binary = dynamic_cast<BinaryExprAST*>(expr.get());
+    if(!binary) {
+        return expr;
+    }
+
+    binary->left = simplify(std::move(binary->left));
+    binary->right = simplify(std::move(binary->right));
+
+    if(binary->op == "+") {
+        if(isNumber(binary->left.get(), 0)) {
+            return std::move(binary->right);
+        }
+
+        if(isNumber(binary->right.get(), 0)) {
+            return std::move(binary->left);
+        }
+    }
+
+    if(binary->op == "*") {
+        if(isNumber(binary->left.get(), 0) ||
+           isNumber(binary->right.get(), 0)) {
+            return std::make_unique<NumberExprAST>(0);
+        }
+
+        if(isNumber(binary->left.get(), 1)) {
+            return std::move(binary->right);
+        }
+
+        if(isNumber(binary->right.get(), 1)) {
+            return std::move(binary->left);
+        }
+    }
+
+    return expr;
+}
+
+std::unique_ptr<ExprNode> makeBinary(const std::string& op, std::unique_ptr<ExprNode> left, std::unique_ptr<ExprNode> right) {
+    return std::make_unique<BinaryExprAST>(op, std::move(left), std::move(right));
+}
+
+LinearForm linearize(const ExprNode* expr, const std::string& target) {
+    if(auto* variable = dynamic_cast<const VariableExprAST*>(expr)) {
+        if(variable->name == target) {
+            return {std::make_unique<NumberExprAST>(1), std::make_unique<NumberExprAST>(0), true};
+        }
+        return {std::make_unique<NumberExprAST>(0), cloneExpr(expr), false};
+    }
+
+    if(dynamic_cast<const NumberExprAST*>(expr) || dynamic_cast<const FloatExprAST*>(expr)) {
+        return {std::make_unique<NumberExprAST>(0), cloneExpr(expr), false};
+    }
+
+    auto* unary = dynamic_cast<const UnaryMinusExprAST*>(expr);
+    if(unary) {
+        LinearForm operand = linearize(unary->operand.get(), target);
+        return {
+            makeBinary("-", std::make_unique<NumberExprAST>(0), std::move(operand.coefficient)),
+            makeBinary("-", std::make_unique<NumberExprAST>(0), std::move(operand.remainder)),
+            operand.containsTarget
+        };
+    }
+
+    auto* binary = dynamic_cast<const BinaryExprAST*>(expr);
+    if(!binary) {
+        throw SemanticError("Only linear arithmetic is supported in equations.");
+    }
+
+    LinearForm left = linearize(binary->left.get(), target);
+    LinearForm right = linearize(binary->right.get(), target);
+
+    if(binary->op == "+" || binary->op == "-") {
+        return {
+            makeBinary(binary->op, std::move(left.coefficient), std::move(right.coefficient)),
+            makeBinary(binary->op, std::move(left.remainder), std::move(right.remainder)),
+            left.containsTarget || right.containsTarget
+        };
+    }
+
+    if(binary->op == "*" || binary->op == "/") {
+        if(left.containsTarget && right.containsTarget) {
+            throw SemanticError("Non-linear equation: the unknown appears twice in a product or quotient.");
+        }
+        if(!left.containsTarget && !right.containsTarget) {
+            return {std::make_unique<NumberExprAST>(0), cloneExpr(expr), false};
+        }
+        if(binary->op == "*" && left.containsTarget) {
+            return {
+                makeBinary("*", std::move(left.coefficient), cloneExpr(right.remainder.get())),
+                makeBinary("*", std::move(left.remainder), std::move(right.remainder)),
+                true
+            };
+        }
+        if(binary->op == "*" && right.containsTarget) {
+            return {
+                makeBinary("*", std::move(right.coefficient), cloneExpr(left.remainder.get())),
+                makeBinary("*", std::move(left.remainder), std::move(right.remainder)),
+                true
+            };
+        }
+        if(binary->op == "/" && left.containsTarget) {
+            return {
+                makeBinary("/", std::move(left.coefficient), cloneExpr(right.remainder.get())),
+                makeBinary("/", std::move(left.remainder), std::move(right.remainder)),
+                true
+            };
+        }
+        if(binary->op == "/" && right.containsTarget) {
+            throw SemanticError("The unknown cannot be used as a divisor.");
+        }
+    }
+
+    throw SemanticError("Unsupported operator in linear equation: " + binary->op);
+}
+
+std::unique_ptr<ExprNode> solveLinearEquation(const EquationAST& equation) {
+    LinearForm left = linearize(equation.left.get(), equation.varneedtofind);
+    LinearForm right = linearize(equation.right.get(), equation.varneedtofind);
+
+    if(!left.containsTarget && !right.containsTarget) {
+        throw SemanticError("Equation does not contain unknown variable: " + equation.varneedtofind);
+    }
+
+    auto coefficient = makeBinary("-", std::move(left.coefficient), std::move(right.coefficient));
+    auto remainder = makeBinary("-", std::move(right.remainder), std::move(left.remainder));
+    return makeBinary("/", std::move(remainder), std::move(coefficient));
+}
 }
 
 void SemanticAnalyzer::enterScope() {
@@ -62,6 +228,10 @@ bool SemanticAnalyzer::isAssignable(const ExprNode* expr) const {
     return dynamic_cast<const VariableExprAST*>(expr) != nullptr ||
            dynamic_cast<const StructAccessAST*>(expr) != nullptr ||
            dynamic_cast<const ArrayAccessAST*>(expr) != nullptr;
+}
+
+bool SemanticAnalyzer::isAssignmentCompatible(const std::string& targetType, const std::string& valueType) const {
+    return targetType == valueType || (targetType == "float" && valueType == "int");
 }
 
 void SemanticAnalyzer::ensureCompatibleTypes(const std::string& leftType, const std::string& rightType, const std::string& opName) const {
@@ -141,7 +311,7 @@ std::string SemanticAnalyzer::typeOf(const ExprNode* expr) const {
         for (size_t i = 0; i < node->Args.size(); ++i) {
             std::string actual = typeOf(node->Args[i].get());
             if (actual != fn->paramTypes[i]) {
-                throw SemanticError("Argument type mismatch in call to '" + node->Callee + "' at parameter " + std::to_string(i + 1) + ".");
+                throw SemanticError("Argument type mismatch in call to '" + node->Callee + "' at parameter " + std::to_string(i + 1));
             }
         }
         return fn->returnType;
@@ -154,7 +324,9 @@ std::string SemanticAnalyzer::typeOf(const ExprNode* expr) const {
             if (!isAssignable(node->left.get())) {
                 throw SemanticError("Left-hand side of assignment is not assignable.");
             }
-            ensureCompatibleTypes(lhs, rhs, node->op);
+            if (!isAssignmentCompatible(lhs, rhs)) {
+                throw SemanticError("Cannot assign " + rhs + " to " + lhs);
+            }
             return lhs;
         }
 
@@ -255,8 +427,18 @@ void SemanticAnalyzer::validateStatement(const ASTNode* stmt) {
         declareVariable(var->name, var->typeName);
         if(var->initializer) {
             std::string initType = typeOf(var->initializer.get());
-            ensureCompatibleTypes(var->typeName, initType, "initializer");
+            if (!isAssignmentCompatible(var->typeName, initType)) {
+                throw SemanticError("Cannot initialize " + var->typeName + " variable '" + var->name + "' with " + initType + ".");
+            }
         }
+        return;
+    }
+
+    if(auto* array = dynamic_cast<const VLADeclAST*>(stmt)) {
+        if(typeOf(array->sizeExpr.get()) != "int") {
+            throw SemanticError("Array size must have type int.");
+        }
+        declareVariable(array->arrayName, "int", true);
         return;
     }
 
@@ -289,18 +471,64 @@ void SemanticAnalyzer::validateStatement(const ASTNode* stmt) {
         return;
     }
 
-    if(auto* loop = dynamic_cast<const WhileLoopAST*>(stmt)) {
-        bool previous = inLoop_;
-        inLoop_ = true;
-        if (auto* condExpr = dynamic_cast<ExprNode*>(loop->cond.get())) {
-            validateExpr(condExpr);
-        } else {
-            throw SemanticError("While condition must be an expression.");
+    if(dynamic_cast<const BreakAST*>(stmt)) {
+        if(!inLoop_) {
+            throw SemanticError("'break' outside of loop.");
         }
-        if (loop->body) {
-            validateNode(loop->body.get());
+        return;
+    }
+
+    if(dynamic_cast<const ContinueAST*>(stmt)) {
+        if(!inLoop_) {
+            throw SemanticError("'continue' outside of loop.");
+        }
+        return;
+    }
+
+    if(auto* loop = dynamic_cast<const WhileLoopAST*>(stmt)) {
+        const bool previous = inLoop_;
+        inLoop_ = true;
+        try {
+            if (auto* condExpr = dynamic_cast<const ExprNode*>(loop->cond.get())) {
+                if (typeOf(condExpr) != "int") {
+                    throw SemanticError("While condition must have type int.");
+                }
+            } else {
+                throw SemanticError("While condition must be an expression.");
+            }
+            if (loop->body) {
+                validateNode(loop->body.get());
+            }
+        } catch(...) {
+            inLoop_ = previous;
+            throw;
         }
         inLoop_ = previous;
+        return;
+    }
+
+    if(auto* equation = dynamic_cast<const EquationAST*>(stmt)) {
+        auto* target = lookupVariable(equation->varneedtofind);
+        if(!target) {
+            throw SemanticError("Unknown equation variable: " + equation->varneedtofind);
+        }
+        if(!isNumericType(target->typeName)) {
+            throw SemanticError("Equation variable must be numeric: " + equation->varneedtofind);
+        }
+
+        std::string leftType = typeOf(equation->left.get());
+        std::string rightType = typeOf(equation->right.get());
+
+        if(!isNumericType(leftType) || !isNumericType(rightType)) {
+            throw SemanticError("Equation sides must be a numeric type");
+        }
+        ensureCompatibleTypes(leftType, rightType, "equation");
+        equation->solution = solveLinearEquation(*equation);
+
+        std::string solutionType = typeOf(equation->solution.get());
+        if(!isAssignmentCompatible(target->typeName, solutionType)) {
+            throw SemanticError("Cannot assign equation result to " + equation->varneedtofind + ".");
+        }
         return;
     }
 

@@ -1,0 +1,7 @@
+int main() {
+    int x;
+    equation x {
+        2x - 20 = 10;
+    }
+    return x;
+}

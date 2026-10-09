@@ -1,12 +1,12 @@
 #include "include/ast.h"
 #include "include/parser.h"
 
-std::unique_ptr<PrototypeAST> Parser::parsePrototype() {
+std::unique_ptr<PrototypeAST> Parser::parsePrototype() {\
+    if(diagnostic::is_panicking) return nullptr;
     std::string FuncName = peek().lexeme;
     consume(TokenType::Identifier, "Syntax error: Expected function name in prototype");
 
     consume(TokenType::LParen, "Syntax error: Expected '(' in prototype");
-
     std::vector<std::string> ArgNames;
     
     while(peek().type == TokenType::KwInt) {
@@ -20,6 +20,7 @@ std::unique_ptr<PrototypeAST> Parser::parsePrototype() {
         }
     }
     consume(TokenType::RParen, "Syntax error: Expected ')' in prototype");
+    if(diagnostic::is_panicking) return nullptr;
 
     return std::make_unique<PrototypeAST>(FuncName, std::move(ArgNames));
 }
@@ -37,6 +38,8 @@ std::unique_ptr<FunctionAST> Parser::parseDefinition() {
         return std::make_unique<FunctionAST>(std::move(Prototype), std::move(Body));
     }
 
-    error("Expected '{' in function definition");
+    diagnostic::recordError("Expected '{' in function definition", peek());
+    diagnostic::is_panicking = true;
+    sync();
     return nullptr;
 }

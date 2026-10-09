@@ -11,6 +11,8 @@ enum class TokenType {
     kwReturn,
     kwWhile,
     kwStruct,
+    kwBreak,
+    kwContinue,
 
     Identifier,
     Number,
@@ -30,6 +32,7 @@ enum class TokenType {
     RBracket,
     Comma,
     Point,
+    Tor,
 
     GT, // Greater than
     LT, // Lower than
@@ -43,7 +46,7 @@ enum class TokenType {
     Equation,
 
     Eof,
-    Unknown
+    Error
 };
 
 enum Precedence {

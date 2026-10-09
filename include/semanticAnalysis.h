@@ -50,6 +50,7 @@ private:
 
     bool isNumericType(const std::string& typeName) const;
     bool isAssignable(const ExprNode* expr) const;
+    bool isAssignmentCompatible(const std::string& targetType, const std::string& valueType) const;
 
     void ensureCompatibleTypes(const std::string& leftType, const std::string& rightType, const std::string& opName) const;
 

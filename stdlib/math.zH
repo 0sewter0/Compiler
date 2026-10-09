@@ -1,3 +1,0 @@
-float sin(float x);
-float cos(float x);
-float sqrt(float x);

@@ -3,11 +3,11 @@
 #include <vector>
 #include <memory>
 #include <cstddef>
-#include <stdexcept>
 #include <string>
 
 #include "ast.h"
 #include "token.h"
+#include "diagnostic.h"
 
 class ParseTracer {
     static inline int depth = 0;
@@ -24,19 +24,20 @@ public:
     }
 };
 
+#ifdef PARSER_TRACE
 #define TRACE_PARSER ParseTracer _tracer(__FUNCTION__)
+#else
+#define TRACE_PARSER ((void)0)
+#endif
 
 class Parser {
 private:
     const std::vector<Token>& tokens;
     size_t pos = 0;
-
     Token GetNextTok();
 
     bool match(TokenType type);
-    Token consume(TokenType type, const std::string& message);
-
-    void error(const std::string& message);
+    Token consume(TokenType type, const char* message);
 
 public:
     explicit Parser(const std::vector<Token>& tokens);
@@ -66,11 +67,8 @@ public:
     Token lookAhead(int n);
     bool isAtEnd() const;
 
-    std::unique_ptr<ExprNode> parseEquation();
+    void sync();
 
-};
+    std::unique_ptr<EquationAST> parseEquation();
 
-class SyntaxError : public std::runtime_error {
-public:
-    using std::runtime_error::runtime_error;
 };

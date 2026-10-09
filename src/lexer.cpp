@@ -1,5 +1,6 @@
 #include <cctype>
 #include "lexer.h"
+#include "diagnostic.h"
 
 Lexer::Lexer(const std::string& source) : src(source) {}
 
@@ -57,6 +58,8 @@ Token Lexer::makeIdentiferOrKeyword() {
     else if(text == "else") type = TokenType::kwElse;
     else if(text == "while") type = TokenType::kwWhile;
     else if(text == "struct") type = TokenType::kwStruct;
+    else if(text == "break") type = TokenType::kwBreak;
+    else if(text == "continue") type = TokenType::kwContinue;
     else if(text == "include") type = TokenType::include;
 
     else if(text == "equation") type = TokenType::Equation;
@@ -96,14 +99,49 @@ std::vector<Token> Lexer::tokenize() {
             case ')': advance(); tokens.push_back({TokenType::RParen, ")", line, startCol}); break;
             case '{': advance(); tokens.push_back({TokenType::LBrace, "{", line, startCol}); break; 
             case '}': advance(); tokens.push_back({TokenType::RBrace, "}", line, startCol}); break;
-            case '=': advance(); tokens.push_back({TokenType::Assign, "=", line, startCol}); break;
+            case '=':
+                advance();
+                if(peek() == '=') {
+                    advance();
+                    tokens.push_back({TokenType::Equal, "==", line, startCol});
+                } else {
+                    tokens.push_back({TokenType::Assign, "=", line, startCol});
+                }
+                break;
+            case '!':
+                advance();
+                if(peek() == '=') {
+                    advance();
+                    tokens.push_back({TokenType::NotEqual, "!=", line, startCol});
+                } else {
+                    diagnostic::recordError("Lexer error: Unknown token", {TokenType::Error, "", line, startCol});
+                }
+                break;
+            case '<':
+                advance();
+                if(peek() == '=') {
+                    advance();
+                    tokens.push_back({TokenType::LE, "<=", line, startCol});
+                } else {
+                    tokens.push_back({TokenType::LT, "<", line, startCol});
+                }
+                break;
+            case '>':
+                advance();
+                if(peek() == '=') {
+                    advance();
+                    tokens.push_back({TokenType::GE, ">=", line, startCol});
+                } else {
+                    tokens.push_back({TokenType::GT, ">", line, startCol});
+                }
+                break;
             case ',': advance(); tokens.push_back({TokenType::Comma, ",", line, startCol}); break;
             case '[': advance(); tokens.push_back({TokenType::LBracket, "[", line, startCol}); break;
             case ']': advance(); tokens.push_back({TokenType::RBracket, "]", line, startCol}); break;
             case '.': advance(); tokens.push_back({TokenType::Point, ".", line, startCol}); break;
+            case '#': advance(); tokens.push_back({TokenType::Tor, "#", line, startCol}); break;
             default:
-                advance();
-                tokens.push_back({TokenType::Unknown, std::string(1, c), line, startCol});
+                diagnostic::recordError("Lexer error: Unknown token", Token{TokenType::Error, "", line, startCol});
                 break;
         }
     }

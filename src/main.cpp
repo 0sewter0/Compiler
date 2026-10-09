@@ -47,32 +47,30 @@ int main(int argc, char* argv[]) {
 
     Parser parser(tokens);
 
-    std::vector<std::unique_ptr<ASTNode>> program;
-
-    bool parseSucceeded = true;
-    while(parser.peek().type != TokenType::Eof) {
-        if(auto node = parser.parseTopLevel()) {
-            program.push_back(std::move(node));
-        } else {
-            std::cerr << "Parsing error encountered at token: " << parser.peek().lexeme << std::endl;
-            parseSucceeded = false;
-            break;
-        }
+    auto parsedProgram = parser.parse();
+    for(const Error& error : diagnostic::errors()) {
+        diagnostic::printAllErrors();
     }
 
-    if(!parseSucceeded) {
+    if(!diagnostic::errors().empty() || !parsedProgram) {
+        return 1;
+    }
+
+    auto* program = dynamic_cast<ProgramAST*>(parsedProgram.get());
+    if(!program) {
+        std::cerr << "Internal error: parser did not produce a program AST.\n";
         return 1;
     }
 
     try {
         SemanticAnalyzer semanticAnalyzer;
-        semanticAnalyzer.analyze(program);
+        semanticAnalyzer.analyze(program->statements);
     } catch(const std::exception& error) {
         std::cerr << "Semantic error: " << error.what() << std::endl;
         return 1;
     }
 
-    for(auto& node : program) {
+    for(auto& node : program->statements) {
         if(node) {
             node->codegen();
         }

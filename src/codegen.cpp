@@ -1,6 +1,21 @@
 #include "include/ast.h"
 #include "include/codegenHelpers.h"
 
+namespace {
+llvm::Value* coerceNumeric(llvm::Value* value, llvm::Type* targetType, const llvm::Twine& name) {
+    if(value->getType() == targetType) {
+        return value;
+    }
+    if(targetType->isFloatingPointTy() && value->getType()->isIntegerTy()) {
+        return Builder.CreateSIToFP(value, targetType, name);
+    }
+    if(targetType->isIntegerTy() && value->getType()->isFloatingPointTy()) {
+        return Builder.CreateFPToSI(value, targetType, name);
+    }
+    return nullptr;
+}
+}
+
 llvm::Value* VariableExprAST::codegen() {
     auto symbolInfo = symbolTable.lookupVariable(name);
     if(!symbolInfo.Alloca) {
@@ -52,9 +67,12 @@ llvm::Value* StructAccessAST::codegenAddress() {
     auto field = structInfo->fields.find(fieldName);
     if(field == structInfo->fields.end()) throw std::runtime_error("Unknown struct field: " + fieldName);
 
+    llvm::Value* baseAddress = base->codegenAddress();
+    if(!baseAddress) throw std::runtime_error("could not get the address of base");
+
     llvm::Value* fieldPtr = Builder.CreateGEP(
         structInfo->type,
-        symbolInfo.Alloca,
+        baseAddress,
         {Builder.getInt32(0), Builder.getInt32(field->second.first)},
         variable->name + "." + fieldName + ".ptr");
 
@@ -314,11 +332,36 @@ llvm::Value* FloatExprAST::codegen() {
     return llvm::ConstantFP::get(Context, llvm::APFloat(val));
 }
 
+llvm::Value* EquationAST::codegen() {
+    if(!solution) {
+        throw std::runtime_error("Equation was not solved before code generation");
+    }
+
+    auto address = symbolTable.lookupVariable(varneedtofind).Alloca;
+    if(!address) {
+        throw std::runtime_error("Unknown equation variable: " + varneedtofind);
+    }
+
+    llvm::Value* value = solution->codegen();
+    value = coerceNumeric(value, address->getAllocatedType(), "equationcast");
+    if(!value) {
+        throw std::runtime_error("Incompatible equation result type");
+    }
+
+    Builder.CreateStore(value, address);
+    return value;
+}
+
 llvm::Value* BinaryExprAST::codegen() {
     if(op == "=") {
         llvm::Value* address = left->codegenAddress();
         llvm::Value* value = right->codegen();
         if(!address || !value) throw std::runtime_error("Invalid assignment");
+        if(auto* variable = dynamic_cast<VariableExprAST*>(left.get())) {
+            auto symbolInfo = symbolTable.lookupVariable(variable->name);
+            value = coerceNumeric(value, symbolInfo.Alloca->getAllocatedType(), "assigncast");
+        }
+        if(!value) throw std::runtime_error("Incompatible assignment types");
         Builder.CreateStore(value, address);
         return value;
     }
@@ -328,16 +371,23 @@ llvm::Value* BinaryExprAST::codegen() {
     if(!leftValue || !rightValue) return nullptr;
 
     bool isFloat = leftValue->getType()->isFloatingPointTy() || rightValue->getType()->isFloatingPointTy();
-    if(op == "<") return isFloat ? Builder.CreateFCmpOLT(leftValue, rightValue) : Builder.CreateICmpSLT(leftValue, rightValue);
-    if(op == ">") return isFloat ? Builder.CreateFCmpOGT(leftValue, rightValue) : Builder.CreateICmpSGT(leftValue, rightValue);
-    if(op == "==") return isFloat ? Builder.CreateFCmpOEQ(leftValue, rightValue) : Builder.CreateICmpEQ(leftValue, rightValue);
-    if(op == "!=") return isFloat ? Builder.CreateFCmpONE(leftValue, rightValue) : Builder.CreateICmpNE(leftValue, rightValue);
-    if(op == "<=") return isFloat ? Builder.CreateFCmpOLE(leftValue, rightValue) : Builder.CreateICmpSLE(leftValue, rightValue);
-    if(op == ">=") return isFloat ? Builder.CreateFCmpOGE(leftValue, rightValue) : Builder.CreateICmpSGE(leftValue, rightValue);
-    if(op == "+") return isFloat ? Builder.CreateFAdd(leftValue, rightValue) : Builder.CreateAdd(leftValue, rightValue);
-    if(op == "-") return isFloat ? Builder.CreateFSub(leftValue, rightValue) : Builder.CreateSub(leftValue, rightValue);
-    if(op == "*") return isFloat ? Builder.CreateFMul(leftValue, rightValue) : Builder.CreateMul(leftValue, rightValue);
-    if(op == "/") return isFloat ? Builder.CreateFDiv(leftValue, rightValue) : Builder.CreateSDiv(leftValue, rightValue);
+    if(isFloat) {
+        llvm::Type* floatType = Builder.getFloatTy();
+        leftValue = coerceNumeric(leftValue, floatType, "leftcast");
+        rightValue = coerceNumeric(rightValue, floatType, "rightcast");
+        if(!leftValue || !rightValue) throw std::runtime_error("Incompatible numeric operands");
+    }
+    if(op == "<") return isFloat ? Builder.CreateFCmpOLT(leftValue, rightValue, "cmptmp") : Builder.CreateICmpSLT(leftValue, rightValue, "cmptmp");
+    if(op == ">") return isFloat ? Builder.CreateFCmpOGT(leftValue, rightValue, "cmptmp") : Builder.CreateICmpSGT(leftValue, rightValue, "cmptmp");
+    if(op == "==") return isFloat ? Builder.CreateFCmpOEQ(leftValue, rightValue, "cmptmp") : Builder.CreateICmpEQ(leftValue, rightValue, "cmptmp");
+    if(op == "!=") return isFloat ? Builder.CreateFCmpONE(leftValue, rightValue, "cmptmp") : Builder.CreateICmpNE(leftValue, rightValue, "cmptmp");
+    if(op == "<=") return isFloat ? Builder.CreateFCmpOLE(leftValue, rightValue, "cmptmp") : Builder.CreateICmpSLE(leftValue, rightValue, "cmptmp");
+    if(op == ">=") return isFloat ? Builder.CreateFCmpOGE(leftValue, rightValue, "cmptmp") : Builder.CreateICmpSGE(leftValue, rightValue, "cmptmp");
+
+    if(op == "+") return isFloat ? Builder.CreateFAdd(leftValue, rightValue, "addtmp") : Builder.CreateAdd(leftValue, rightValue, "addtmp");
+    if(op == "-") return isFloat ? Builder.CreateFSub(leftValue, rightValue, "subtmp") : Builder.CreateSub(leftValue, rightValue, "subtmp");
+    if(op == "*") return isFloat ? Builder.CreateFMul(leftValue, rightValue, "multmp") : Builder.CreateMul(leftValue, rightValue, "multmp");
+    if(op == "/") return isFloat ? Builder.CreateFDiv(leftValue, rightValue, "divtmp") : Builder.CreateSDiv(leftValue, rightValue, "divtmp");
     throw std::runtime_error("Unknown binary operator: " + op);
 }
 
@@ -384,6 +434,7 @@ llvm::Value* ArrayDeclAST::codegen() {
     symbolTable.declareVariable(name, alloca, typeName, VariableType::StaticArray, lifetimeSize);
     return alloca;
 }
+
 
 llvm::Value* ProgramAST::codegen() {
     llvm::Value* lastValue = nullptr;

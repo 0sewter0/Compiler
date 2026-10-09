@@ -1,7 +1,7 @@
 struct Car {
     int vel;
     int pos;
-}
+};
 
 int main() {
     struct Car car1;
