@@ -1,4 +1,4 @@
-# zH Compiler is a learn project by sewter(me)
+# srz Compiler is a learn project by sewter(me)
 
 ***In progress***
 
