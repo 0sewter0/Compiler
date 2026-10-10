@@ -139,7 +139,6 @@ std::vector<Token> Lexer::tokenize() {
             case '[': advance(); tokens.push_back({TokenType::LBracket, "[", line, startCol}); break;
             case ']': advance(); tokens.push_back({TokenType::RBracket, "]", line, startCol}); break;
             case '.': advance(); tokens.push_back({TokenType::Point, ".", line, startCol}); break;
-            case '#': advance(); tokens.push_back({TokenType::Tor, "#", line, startCol}); break;
             default:
                 diagnostic::recordError("Lexer error: Unknown token", Token{TokenType::Error, "", line, startCol});
                 break;

@@ -15,7 +15,3 @@ void diagnostic::printAllErrors() {
         std::cerr << "Parse error at " << err.line << ":" << err.col << ", " << err.message << std::endl;
     }
 }
-
-std::vector<Error>* diagnostic::getErrors() {
-    return &errors_;
-}

@@ -17,7 +17,7 @@ llvm::AllocaInst* createEntryBlockAlloca(llvm::Function* TheFunction, const std:
     return TmpB.CreateAlloca(VarTy, nullptr, VarName);
 }
 
-llvm::Value* createArrayElementPointer(const SymbolInfo& arrayInfo,llvm::Value* index, const std::string& resultName) {
+llvm::Value* createArrayElementPointer(const SymbolInfo& arrayInfo, llvm::Value* index, const std::string& resultName) {
     if(!arrayInfo.Alloca || !index) {
         throw std::runtime_error("Cannot index an unknown array");
     }

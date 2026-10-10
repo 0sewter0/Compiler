@@ -1,7 +1,7 @@
 #include "include/ast.h"
 #include "include/parser.h"
 
-std::unique_ptr<PrototypeAST> Parser::parsePrototype() {\
+std::unique_ptr<PrototypeAST> Parser::parsePrototype() {
     if(diagnostic::is_panicking) return nullptr;
     std::string FuncName = peek().lexeme;
     consume(TokenType::Identifier, "Syntax error: Expected function name in prototype");

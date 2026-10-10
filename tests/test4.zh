@@ -1,6 +1,6 @@
 int main() {
     int arr[4];
-    arr[0] = 2;
+    arr[0] = 10;
     arr[1] = 5;
     arr[2] = 4;
     arr[3] = 1;
@@ -21,5 +21,5 @@ int main() {
         }
         pass = pass + 1;
     }
-    return arr[1];
+    return arr[3];
 }

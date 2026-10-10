@@ -2,25 +2,25 @@
 
 namespace {
 std::string getTypeNameForLiteral(const ExprNode* expr) {
-    if (dynamic_cast<const NumberExprAST*>(expr)) return "int";
-    if (dynamic_cast<const FloatExprAST*>(expr)) return "float";
+    if (isa<const NumberExprAST>(expr)) return "int";
+    if (isa<const FloatExprAST>(expr)) return "float";
     return "unknown";
 }
 
 std::unique_ptr<ExprNode> cloneExpr(const ExprNode* expr) {
-    if(auto* node = dynamic_cast<const NumberExprAST*>(expr)) {
+    if(auto* node = cast_or_null<const NumberExprAST>(expr)) {
         return std::make_unique<NumberExprAST>(node->value);
     }
-    if(auto* node = dynamic_cast<const FloatExprAST*>(expr)) {
+    if(auto* node = cast_or_null<const FloatExprAST>(expr)) {
         return std::make_unique<FloatExprAST>(node->value());
     }
-    if(auto* node = dynamic_cast<const VariableExprAST*>(expr)) {
+    if(auto* node = cast_or_null<const VariableExprAST>(expr)) {
         return std::make_unique<VariableExprAST>(node->name);
     }
-    if(auto* node = dynamic_cast<const BinaryExprAST*>(expr)) {
+    if(auto* node = cast_or_null<const BinaryExprAST>(expr)) {
         return std::make_unique<BinaryExprAST>(node->op, cloneExpr(node->left.get()), cloneExpr(node->right.get()));
     }
-    if(auto* node = dynamic_cast<const UnaryMinusExprAST*>(expr)) {
+    if(auto* node = cast_or_null<const UnaryMinusExprAST>(expr)) {
         return std::make_unique<UnaryMinusExprAST>(node->op, cloneExpr(node->operand.get()));
     }
     throw SemanticError("Unsupported expression in equation.");
@@ -33,7 +33,7 @@ struct LinearForm {
 };
 
 std::optional<int> getIntegerConstant(const ExprNode* expr) {
-    auto* number = dynamic_cast<const NumberExprAST*>(expr);
+    auto* number = cast_or_null<const NumberExprAST>(expr);
     if(!number) {
         return std::nullopt;
     }
@@ -41,12 +41,12 @@ std::optional<int> getIntegerConstant(const ExprNode* expr) {
 }
 
 bool isNumber(const ExprNode* expr, int expected) {
-    auto* number = dynamic_cast<const NumberExprAST*>(expr);
+    auto* number = cast<const NumberExprAST>(expr);
     return number && number->value == expected;
 }
 
 std::unique_ptr<ExprNode> simplify(std::unique_ptr<ExprNode> expr) {
-    auto* binary = dynamic_cast<BinaryExprAST*>(expr.get());
+    auto* binary = cast_or_null<BinaryExprAST>(expr.get());
     if(!binary) {
         return expr;
     }
@@ -87,18 +87,18 @@ std::unique_ptr<ExprNode> makeBinary(const std::string& op, std::unique_ptr<Expr
 }
 
 LinearForm linearize(const ExprNode* expr, const std::string& target) {
-    if(auto* variable = dynamic_cast<const VariableExprAST*>(expr)) {
+    if(auto* variable = cast_or_null<const VariableExprAST>(expr)) {
         if(variable->name == target) {
             return {std::make_unique<NumberExprAST>(1), std::make_unique<NumberExprAST>(0), true};
         }
         return {std::make_unique<NumberExprAST>(0), cloneExpr(expr), false};
     }
 
-    if(dynamic_cast<const NumberExprAST*>(expr) || dynamic_cast<const FloatExprAST*>(expr)) {
+    if(isa<const NumberExprAST>(expr) || isa<const FloatExprAST>(expr)) {
         return {std::make_unique<NumberExprAST>(0), cloneExpr(expr), false};
     }
 
-    auto* unary = dynamic_cast<const UnaryMinusExprAST*>(expr);
+    auto* unary = cast_or_null<const UnaryMinusExprAST>(expr);
     if(unary) {
         LinearForm operand = linearize(unary->operand.get(), target);
         return {
@@ -108,7 +108,7 @@ LinearForm linearize(const ExprNode* expr, const std::string& target) {
         };
     }
 
-    auto* binary = dynamic_cast<const BinaryExprAST*>(expr);
+    auto* binary = cast_or_null<const BinaryExprAST>(expr);
     if(!binary) {
         throw SemanticError("Only linear arithmetic is supported in equations.");
     }
@@ -225,9 +225,9 @@ bool SemanticAnalyzer::isNumericType(const std::string& typeName) const {
 }
 
 bool SemanticAnalyzer::isAssignable(const ExprNode* expr) const {
-    return dynamic_cast<const VariableExprAST*>(expr) != nullptr ||
-           dynamic_cast<const StructAccessAST*>(expr) != nullptr ||
-           dynamic_cast<const ArrayAccessAST*>(expr) != nullptr;
+    return cast_or_null<const VariableExprAST>(expr) != nullptr ||
+           cast_or_null<const StructAccessAST>(expr) != nullptr ||
+           cast_or_null<const ArrayAccessAST>(expr) != nullptr;
 }
 
 bool SemanticAnalyzer::isAssignmentCompatible(const std::string& targetType, const std::string& valueType) const {
@@ -251,23 +251,23 @@ std::string SemanticAnalyzer::typeOf(const ExprNode* expr) const {
         return "void";
     }
 
-    if(auto* node = dynamic_cast<const NumberExprAST*>(expr)) {
+    if(auto* node = cast_or_null<const NumberExprAST>(expr)) {
         (void)node;
         return "int";
     }
-    if(auto* node = dynamic_cast<const FloatExprAST*>(expr)) {
+    if(auto* node = cast_or_null<const FloatExprAST>(expr)) {
         (void)node;
         return "float";
     }
-    if(auto* node = dynamic_cast<const VariableExprAST*>(expr)) {
+    if(auto* node = cast_or_null<const VariableExprAST>(expr)) {
         auto* info = lookupVariable(node->name);
         if (!info) {
             throw SemanticError("Unknown variable: " + node->name);
         }
         return info->typeName;
     }
-    if(auto* node = dynamic_cast<const StructAccessAST*>(expr)) {
-        auto* base = dynamic_cast<const VariableExprAST*>(node->base.get());
+    if(auto* node = cast_or_null<const StructAccessAST>(expr)) {
+        auto* base = cast_or_null<const VariableExprAST>(node->base.get());
         if (!base) {
             throw SemanticError("Struct access target must be a variable.");
         }
@@ -286,8 +286,8 @@ std::string SemanticAnalyzer::typeOf(const ExprNode* expr) const {
         }
         return fieldIt->second;
     }
-    if(auto* node = dynamic_cast<const ArrayAccessAST*>(expr)) {
-        auto* base = dynamic_cast<const VariableExprAST*>(node->base.get());
+    if(auto* node = cast_or_null<const ArrayAccessAST>(expr)) {
+        auto* base = cast_or_null<const VariableExprAST>(node->base.get());
         if (!base) {
             throw SemanticError("Array access target must be a variable.");
         }
@@ -300,7 +300,7 @@ std::string SemanticAnalyzer::typeOf(const ExprNode* expr) const {
         }
         return var->typeName;
     }
-    if(auto* node = dynamic_cast<const CallExprAST*>(expr)) {
+    if(auto* node = cast_or_null<const CallExprAST>(expr)) {
         auto* fn = lookupFunction(node->Callee);
         if (!fn) {
             throw SemanticError("Unknown function: " + node->Callee);
@@ -316,7 +316,7 @@ std::string SemanticAnalyzer::typeOf(const ExprNode* expr) const {
         }
         return fn->returnType;
     }
-    if(auto* node = dynamic_cast<const BinaryExprAST*>(expr)) {
+    if(auto* node = cast_or_null<const BinaryExprAST>(expr)) {
         std::string lhs = typeOf(node->left.get());
         std::string rhs = typeOf(node->right.get());
 
@@ -345,7 +345,7 @@ std::string SemanticAnalyzer::typeOf(const ExprNode* expr) const {
 
         throw SemanticError("Unsupported binary operator: " + node->op);
     }
-    if(auto* node = dynamic_cast<const UnaryMinusExprAST*>(expr)) {
+    if(auto* node = cast_or_null<const UnaryMinusExprAST>(expr)) {
         std::string operandType = typeOf(node->operand.get());
         if (!isNumericType(operandType)) {
             throw SemanticError("Unary '-' requires numeric operand.");
@@ -359,16 +359,16 @@ std::string SemanticAnalyzer::typeOf(const ASTNode* node) const {
     if(!node) {
         return "void";
     }
-    if(auto* expr = dynamic_cast<const ExprNode*>(node)) {
+    if(auto* expr = cast_or_null<const ExprNode>(node)) {
         return typeOf(expr);
     }
-    if(auto* stmt = dynamic_cast<const ReturnStmtAST*>(node)) {
+    if(auto* stmt = cast_or_null<const ReturnStmtAST>(node)) {
         if (!stmt->Value) {
             return "void";
         }
         return typeOf(static_cast<const ExprNode*>(stmt->Value.get()));
     }
-    if(auto* var = dynamic_cast<const VarDecAST*>(node)) {
+    if(auto* var = cast_or_null<const VarDecAST>(node)) {
         return var->typeName;
     }
     return "void";
@@ -420,7 +420,7 @@ void SemanticAnalyzer::validateStatement(const ASTNode* stmt) {
         return;
     }
 
-    if(auto* var = dynamic_cast<const VarDecAST*>(stmt)) {
+    if(auto* var = cast_or_null<const VarDecAST>(stmt)) {
         if(var->typeName.empty()) {
             throw SemanticError("Variable declaration without type.");
         }
@@ -434,7 +434,7 @@ void SemanticAnalyzer::validateStatement(const ASTNode* stmt) {
         return;
     }
 
-    if(auto* array = dynamic_cast<const VLADeclAST*>(stmt)) {
+    if(auto* array = cast_or_null<const VLADeclAST>(stmt)) {
         if(typeOf(array->sizeExpr.get()) != "int") {
             throw SemanticError("Array size must have type int.");
         }
@@ -442,7 +442,7 @@ void SemanticAnalyzer::validateStatement(const ASTNode* stmt) {
         return;
     }
 
-    if(auto* ret = dynamic_cast<const ReturnStmtAST*>(stmt)) {
+    if(auto* ret = cast_or_null<const ReturnStmtAST>(stmt)) {
         if(functionStack_.empty()) {
             throw SemanticError("Return outside of function.");
         }
@@ -455,12 +455,12 @@ void SemanticAnalyzer::validateStatement(const ASTNode* stmt) {
         return;
     }
 
-    if(auto* block = dynamic_cast<const BlockAST*>(stmt)) {
+    if(auto* block = cast_or_null<const BlockAST>(stmt)) {
         validateBlock(*block);
         return;
     }
 
-    if(auto* ifStmt = dynamic_cast<const IfStmtAST*>(stmt)) {
+    if(auto* ifStmt = cast_or_null<const IfStmtAST>(stmt)) {
         validateExpr(ifStmt->Condition.get());
         if(ifStmt->Then) {
             validateNode(ifStmt->Then.get());
@@ -471,25 +471,25 @@ void SemanticAnalyzer::validateStatement(const ASTNode* stmt) {
         return;
     }
 
-    if(dynamic_cast<const BreakAST*>(stmt)) {
+    if(isa<const BreakAST>(stmt)) {
         if(!inLoop_) {
             throw SemanticError("'break' outside of loop.");
         }
         return;
     }
 
-    if(dynamic_cast<const ContinueAST*>(stmt)) {
+    if(isa<const ContinueAST>(stmt)) {
         if(!inLoop_) {
             throw SemanticError("'continue' outside of loop.");
         }
         return;
     }
 
-    if(auto* loop = dynamic_cast<const WhileLoopAST*>(stmt)) {
+    if(auto* loop = cast_or_null<const WhileLoopAST>(stmt)) {
         const bool previous = inLoop_;
         inLoop_ = true;
         try {
-            if (auto* condExpr = dynamic_cast<const ExprNode*>(loop->cond.get())) {
+            if (auto* condExpr = cast_or_null<const ExprNode>(loop->cond.get())) {
                 if (typeOf(condExpr) != "int") {
                     throw SemanticError("While condition must have type int.");
                 }
@@ -507,7 +507,7 @@ void SemanticAnalyzer::validateStatement(const ASTNode* stmt) {
         return;
     }
 
-    if(auto* equation = dynamic_cast<const EquationAST*>(stmt)) {
+    if(auto* equation = cast_or_null<const EquationAST>(stmt)) {
         auto* target = lookupVariable(equation->varneedtofind);
         if(!target) {
             throw SemanticError("Unknown equation variable: " + equation->varneedtofind);
@@ -532,22 +532,22 @@ void SemanticAnalyzer::validateStatement(const ASTNode* stmt) {
         return;
     }
 
-    if(auto* call = dynamic_cast<const CallExprAST*>(stmt)) {
+    if(auto* call = cast_or_null<const CallExprAST>(stmt)) {
         validateExpr(call);
         return;
     }
 
-    if(auto* expr = dynamic_cast<const ExprNode*>(stmt)) {
+    if(auto* expr = cast_or_null<const ExprNode>(stmt)) {
         validateExpr(expr);
         return;
     }
 
-    if(auto* func = dynamic_cast<const FunctionAST*>(stmt)) {
+    if(auto* func = cast_or_null<const FunctionAST>(stmt)) {
         validateFunction(*func);
         return;
     }
 
-    if(auto* structDecl = dynamic_cast<const StructDeclAST*>(stmt)) {
+    if(auto* structDecl = cast_or_null<const StructDeclAST>(stmt)) {
         if (structs_.count(structDecl->structName) != 0) {
             throw SemanticError("Redefinition of struct: " + structDecl->structName);
         }

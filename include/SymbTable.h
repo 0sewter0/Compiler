@@ -64,7 +64,7 @@ public:
     }
 
     void declareVariable(const std::string& name,
-                         llvm::AllocaInst* alloca,
+                         llvm::AllocaInst* Alloca,
                          const std::string& typeName = "",
                          VariableType variableType = VariableType::Basic,
                          llvm::ConstantInt* lifetimeSize = nullptr) {
@@ -75,7 +75,7 @@ public:
             throw std::runtime_error("Redefinition of variable: " + name);
         }
 
-        scopes.back()[name] = {alloca, typeName, variableType, lifetimeSize};
+        scopes.back()[name] = {Alloca, typeName, variableType, lifetimeSize};
     }
 
     SymbolInfo lookupVariable(const std::string& name) {

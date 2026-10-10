@@ -14,7 +14,7 @@ bool Parser::match(TokenType type) { // Checks the current Token
     return false;
 }
 
-void Parser::sync() { // Skips tokens until ';'
+void Parser::sync() { // Skips tokens until ';', eof or '}'
     while(peek().type != TokenType::Eof && peek().type != TokenType::Semicolon && peek().type != TokenType::RBrace) {
         advance();
     }
@@ -127,9 +127,6 @@ std::unique_ptr<ASTNode> Parser::parseStatement() {
     }
 
     if(peek().type == TokenType::KwInt) {
-        if(lookAhead(2).type == TokenType::LParen) {
-            return parseDefinition();
-        }
         return parseVarDecl();
     } else if(peek().type == TokenType::kwReturn) {
         return parseReturnStmt();
@@ -211,15 +208,12 @@ std::unique_ptr<ASTNode> Parser::parseTopLevel() {
         if(lookAhead(1).type == TokenType::Identifier && lookAhead(2).type == TokenType::LBrace) {
             return parseStructDecl();
         }
-
-        if(peek().type == TokenType::KwInt || peek().type == TokenType::kwFloat) {
-            if(lookAhead(1).type == TokenType::Identifier && lookAhead(2).type == TokenType::LParen) {
-                return parseDefinition();
-            } else if(lookAhead(1).type == TokenType::Identifier) {
-                return parseVarDecl();
-            } else {
-                consume(TokenType::Identifier, "Syntax error: Expected Variable name, function name after 'int'");
-            }
+    }
+    if(peek().type == TokenType::KwInt || peek().type == TokenType::kwFloat) {
+        if(lookAhead(2).type == TokenType::LParen) {
+            return parseDefinition();
+        } else if(lookAhead(1).type == TokenType::Identifier) {
+            return parseVarDecl();
         }
     }
     if(peek().type == TokenType::Equation) {
@@ -230,14 +224,14 @@ std::unique_ptr<ASTNode> Parser::parseTopLevel() {
 
 std::unique_ptr<ASTNode> Parser::parse() {
     pos = 0;
-    diagnostic::getErrors()->clear();
+    diagnostic::errors().clear();
     std::vector<std::unique_ptr<ASTNode>> statements;
 
     while(!isAtEnd() && peek().type != TokenType::Eof) {
         size_t start = pos;
-        size_t errorsBefore = diagnostic::getErrors()->size();
+        size_t errorsBefore = diagnostic::errors().size();
         auto node = parseTopLevel();
-        if(diagnostic::getErrors()->size() != errorsBefore) {
+        if(diagnostic::errors().size() != errorsBefore) {
             if(diagnostic::is_panicking) sync();
         } else if(node) {
             statements.push_back(std::move(node));
@@ -245,8 +239,8 @@ std::unique_ptr<ASTNode> Parser::parse() {
 
         if(pos == start) {
             const Token& unexpected = peek();
-            if(diagnostic::getErrors()->size() == errorsBefore) {
-                diagnostic::getErrors()->push_back({unexpected.line, unexpected.col, 1, "Unexpected token '" + unexpected.lexeme + "'"});
+            if(diagnostic::errors().size() == errorsBefore) {
+                diagnostic::errors().push_back({unexpected.line, unexpected.col, 1, "Unexpected token '" + unexpected.lexeme + "'"});
             }
             advance();
         }

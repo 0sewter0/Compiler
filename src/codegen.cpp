@@ -48,7 +48,7 @@ llvm::Value* StructAccessAST::codegen() {
     llvm::Value* fieldPointer = codegenAddress();
     if(!fieldPointer) return nullptr;
 
-    auto* variable = dynamic_cast<VariableExprAST*>(base.get());
+    auto* variable = cast<VariableExprAST>(base.get());
     auto symbolInfo = symbolTable.lookupVariable(variable->name);
     auto* structInfo = symbolTable.getStructInfo(symbolInfo.typeName);
     auto field = structInfo->fields.find(fieldName);
@@ -56,7 +56,7 @@ llvm::Value* StructAccessAST::codegen() {
 }
 
 llvm::Value* StructAccessAST::codegenAddress() {
-    auto* variable = dynamic_cast<VariableExprAST*>(base.get());
+    auto* variable = cast<VariableExprAST>(base.get());
     if(!variable) throw std::runtime_error("Nested struct access codegen is under construction");
 
     auto symbolInfo = symbolTable.lookupVariable(variable->name);
@@ -108,7 +108,7 @@ llvm::Value* ArrayAccessAST::codegen() {
 }
 
 llvm::Value* ArrayAccessAST::codegenAddress() {
-    auto* variable = dynamic_cast<VariableExprAST*>(base.get());
+    auto* variable = cast<VariableExprAST>(base.get());
     if(!variable) throw std::runtime_error("Nested array access is under construction");
 
     auto arrayInfo = symbolTable.lookupVariable(variable->name);
@@ -140,14 +140,14 @@ llvm::Value* VLADeclAST::codegen() {
     llvm::Value* count = sizeExpr->codegen();
     if(!count) return nullptr;
 
-    llvm::AllocaInst* alloca = Builder.CreateAlloca(Builder.getInt32Ty(), count, arrayName);
+    llvm::AllocaInst* Alloca = Builder.CreateAlloca(Builder.getInt32Ty(), count, arrayName);
 
     llvm::ConstantInt* unknownSize = Builder.getInt64(-1);
 
-    Builder.CreateLifetimeStart(alloca);
+    Builder.CreateLifetimeStart(Alloca);
 
-    symbolTable.declareVariable(arrayName, alloca, "int", VariableType::RuntimeArray, unknownSize);
-    return alloca;
+    symbolTable.declareVariable(arrayName, Alloca, "int", VariableType::RuntimeArray, unknownSize);
+    return Alloca;
 }
 
 llvm::Value* BreakAST::codegen() {
@@ -357,7 +357,7 @@ llvm::Value* BinaryExprAST::codegen() {
         llvm::Value* address = left->codegenAddress();
         llvm::Value* value = right->codegen();
         if(!address || !value) throw std::runtime_error("Invalid assignment");
-        if(auto* variable = dynamic_cast<VariableExprAST*>(left.get())) {
+        if(auto* variable = cast_or_null<VariableExprAST>(left.get())) {
             auto symbolInfo = symbolTable.lookupVariable(variable->name);
             value = coerceNumeric(value, symbolInfo.Alloca->getAllocatedType(), "assigncast");
         }
@@ -406,18 +406,18 @@ llvm::Value* VarDecAST::codegen() {
 
     llvm::Type* variableType = getTypeByName(typeName);
     
-    llvm::AllocaInst* alloca = createEntryBlockAlloca(function, name, variableType);
+    llvm::AllocaInst* Alloca = createEntryBlockAlloca(function, name, variableType);
     llvm::ConstantInt* lifetimeSize = Builder.getInt64(TheModule->getDataLayout().getTypeAllocSize(variableType));
-    Builder.CreateLifetimeStart(alloca);
+    Builder.CreateLifetimeStart(Alloca);
 
     if(initializer) {
         llvm::Value* initialValue = initializer->codegen();
         if(!initialValue) return nullptr;
-        Builder.CreateStore(initialValue, alloca);
+        Builder.CreateStore(initialValue, Alloca);
     }
-    symbolTable.declareVariable(name, alloca, typeName, VariableType::Basic, lifetimeSize);
+    symbolTable.declareVariable(name, Alloca, typeName, VariableType::Basic, lifetimeSize);
 
-    return alloca;
+    return Alloca;
 }
 
 ArrayDeclAST::~ArrayDeclAST() = default;
@@ -428,11 +428,11 @@ llvm::Value* ArrayDeclAST::codegen() {
     llvm::Value* count = sizeExpr ? sizeExpr->codegen() : llvm::ConstantInt::get(Context, llvm::APInt(32, 1, true));
     if(!count) return nullptr;
 
-    llvm::AllocaInst* alloca = Builder.CreateAlloca(elementType, count, name);
+    llvm::AllocaInst* Alloca = Builder.CreateAlloca(elementType, count, name);
     llvm::ConstantInt* lifetimeSize = Builder.getInt64(TheModule->getDataLayout().getTypeAllocSize(elementType));
-    Builder.CreateLifetimeStart(alloca);
-    symbolTable.declareVariable(name, alloca, typeName, VariableType::StaticArray, lifetimeSize);
-    return alloca;
+    Builder.CreateLifetimeStart(Alloca);
+    symbolTable.declareVariable(name, Alloca, typeName, VariableType::StaticArray, lifetimeSize);
+    return Alloca;
 }
 
 

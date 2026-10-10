@@ -19,7 +19,6 @@ std::unique_ptr<ASTNode> Parser::parseVarDecl() {
         typeName = advance().lexeme;
     } else {
         diagnostic::recordError("Expected type specifier", peek());
-        diagnostic::is_panicking = true;
         sync();
         return nullptr;
     }
@@ -62,7 +61,6 @@ std::unique_ptr<ASTNode> Parser::parseStructDecl() {
             typeName = advance().lexeme;
         } else {
             diagnostic::recordError("Expected field type (e.g. 'int')", peek());
-            diagnostic::is_panicking = true;
             sync();
             continue;
         }

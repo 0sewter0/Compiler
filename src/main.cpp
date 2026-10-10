@@ -56,7 +56,7 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    auto* program = dynamic_cast<ProgramAST*>(parsedProgram.get());
+    auto* program = cast_or_null<ProgramAST>(parsedProgram.get());
     if(!program) {
         std::cerr << "Internal error: parser did not produce a program AST.\n";
         return 1;
