@@ -12,6 +12,6 @@ void diagnostic::recordError(const std::string& message, const Token &t) {
 
 void diagnostic::printAllErrors() {
     for(const auto err : errors_) {
-        std::cerr << "Parse error at " << err.line << ":" << err.col << ", " << err.message << std::endl;
+        std::cerr << "Compilation error[" << "line: " << err.line << ", column: " << err.col << "]" << err.message << std::endl;
     }
 }

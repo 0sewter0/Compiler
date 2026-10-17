@@ -14,6 +14,7 @@ private:
     static std::vector<Error> errors_;
 public:
     static void recordError(const std::string& message, const Token &t);
+    static void recordError(const std::string& message);
     static void printAllErrors();
     static std::vector<Error> &errors() { return errors_; }
 
